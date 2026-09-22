@@ -1,0 +1,19 @@
+{
+  "name": "family-bot",
+  "version": "1.0.0",
+  "description": "Telegram-бот «Профессор» — мудрый семейный собеседник на литературном узбекском языке (кириллица)",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
+    "dotenv": "^18.0.2",
+    "telegraf": "^4.16.3"
+  }
+}
