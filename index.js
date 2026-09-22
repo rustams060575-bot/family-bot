@@ -10,7 +10,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-5";
-const USERS_FILE = path.join(__dirname, "data", "users.json");
+// DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
+// на Railway — точка монтирования Volume (Settings → Volumes → Mount Path), например /data.
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, "data");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
 const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
 const MAX_HISTORY_MESSAGES = 30;
 const SAVE_NAME_TAG = /\[\[SAVE_NAME:\s*([^|]+)\|(ХОН|БЕК|ЖОН)\s*\]\]\s*$/u;
@@ -23,25 +28,47 @@ const basePrompt = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
 const anthropic = new Anthropic();
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
 function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) return {};
   try {
     return JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
-  } catch {
+  } catch (error) {
+    console.error(`${USERS_FILE} ўқилмади, бўш хотирадан бошланяпти:`, error);
     return {};
   }
 }
 
-function saveUsers(users) {
-  fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), "utf-8");
+// Хранилище читается с диска один раз при старте и дальше живёт в памяти —
+// это исключает потерю параллельных изменений между разными чатами
+// (загрузка-правка-сохранение всего файла на каждое сообщение могла их затирать).
+const users = loadUsers();
+
+function saveUsers() {
+  const tmpFile = `${USERS_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(users, null, 2), "utf-8");
+  fs.renameSync(tmpFile, USERS_FILE);
 }
 
-function getUser(users, chatId) {
+function getUser(chatId) {
   if (!users[chatId]) {
     users[chatId] = { name: null, suffix: null, history: [] };
   }
   return users[chatId];
+}
+
+// Последовательная очередь на чат: не даёт двум быстрым сообщениям одного и того же
+// пользователя перемешать историю диалога, пока оба ответа ждут Claude API.
+const chatQueues = new Map();
+function enqueue(chatId, task) {
+  const previous = chatQueues.get(chatId) ?? Promise.resolve();
+  const next = previous.then(task, task);
+  chatQueues.set(
+    chatId,
+    next.catch(() => {}),
+  );
+  return next;
 }
 
 function buildSystemPrompt(user) {
@@ -91,45 +118,50 @@ async function askProfessor(user, userText) {
 }
 
 bot.start(async (ctx) => {
-  const users = loadUsers();
   const chatId = String(ctx.chat.id);
-  const user = getUser(users, chatId);
-  user.history = [];
 
-  try {
-    const reply = await askProfessor(user, "/start");
-    await ctx.reply(reply);
-  } finally {
-    saveUsers(users);
-  }
+  await enqueue(chatId, async () => {
+    const user = getUser(chatId);
+    user.history = [];
+
+    try {
+      const reply = await askProfessor(user, "/start");
+      await ctx.reply(reply);
+    } finally {
+      saveUsers();
+    }
+  });
 });
 
 bot.command("reset", async (ctx) => {
-  const users = loadUsers();
   const chatId = String(ctx.chat.id);
-  users[chatId] = { name: null, suffix: null, history: [] };
-  saveUsers(users);
-  await ctx.reply("Хотирам тозаланди. Қайтадан танишайлик — Ассалому алайкум!");
+
+  await enqueue(chatId, async () => {
+    users[chatId] = { name: null, suffix: null, history: [] };
+    saveUsers();
+    await ctx.reply("Хотирам тозаланди. Қайтадан танишайлик — Ассалому алайкум!");
+  });
 });
 
 bot.on("text", async (ctx) => {
-  const users = loadUsers();
   const chatId = String(ctx.chat.id);
-  const user = getUser(users, chatId);
 
-  await ctx.sendChatAction("typing");
+  await enqueue(chatId, async () => {
+    const user = getUser(chatId);
+    await ctx.sendChatAction("typing");
 
-  try {
-    const reply = await askProfessor(user, ctx.message.text);
-    await ctx.reply(reply);
-  } catch (error) {
-    console.error("Claude API xatosi:", error);
-    await ctx.reply(
-      "Кечирасиз, фарзандим, ҳозир фикримни жамлай олмадим. Бир оздан сўнг қайта ёзинг.",
-    );
-  } finally {
-    saveUsers(users);
-  }
+    try {
+      const reply = await askProfessor(user, ctx.message.text);
+      await ctx.reply(reply);
+    } catch (error) {
+      console.error("Claude API xatosi:", error);
+      await ctx.reply(
+        "Кечирасиз, фарзандим, ҳозир фикримни жамлай олмадим. Бир оздан сўнг қайта ёзинг.",
+      );
+    } finally {
+      saveUsers();
+    }
+  });
 });
 
 bot.launch();
