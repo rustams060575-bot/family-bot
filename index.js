@@ -18,28 +18,63 @@ const DATA_DIR = process.env.DATA_DIR
   : path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
+// Пара (запрос + ответ) — один "ход"; храним последние 15 ходов на чат.
 const MAX_HISTORY_MESSAGES = 30;
-const SAVE_NAME_TAG = /\[\[SAVE_NAME:\s*([^|]+)\|(ХОН|БЕК|ЖОН)\s*\]\]\s*$/u;
+const FALLBACK_ERROR_MESSAGE =
+  "Извините, сейчас не получилось получить ответ — произошёл сбой при обращении к ИИ. Пожалуйста, попробуйте написать ещё раз через минуту.";
 
 if (!TELEGRAM_BOT_TOKEN) {
-  throw new Error("TELEGRAM_BOT_TOKEN топилмади — .env файлини текширинг.");
+  throw new Error("TELEGRAM_BOT_TOKEN не найден — проверьте .env.");
 }
 if (!GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY топилмади — .env файлини текширинг.");
+  throw new Error("GEMINI_API_KEY не найден — проверьте .env.");
 }
 
-const basePrompt = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
+const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
 const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+function isNonEmptyText(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+// Приводит запись пользователя к текущей схеме { history: Content[] }, где Content —
+// это ровно тот формат, которого ждёт Gemini: { role: "user" | "model", parts: [{ text }] }.
+// Понимает и старый формат записей ({ role: "user"/"assistant", content: "..." }, оставшийся
+// от прошлой версии бота на другом провайдере) и обновляет их на лету; всё остальное —
+// повреждённые или нераспознанные записи — тихо отбрасывает, а не роняет бота.
+function normalizeUser(raw) {
+  const rawHistory = Array.isArray(raw?.history) ? raw.history : [];
+  const history = [];
+
+  for (const turn of rawHistory) {
+    if (Array.isArray(turn?.parts) && isNonEmptyText(turn.parts[0]?.text)) {
+      const role = turn.role === "model" ? "model" : "user";
+      history.push({ role, parts: [{ text: turn.parts[0].text }] });
+      continue;
+    }
+    if (isNonEmptyText(turn?.content)) {
+      const role = turn.role === "assistant" ? "model" : "user";
+      history.push({ role, parts: [{ text: turn.content }] });
+    }
+  }
+
+  return { history };
+}
+
 function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) return {};
   try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
+    const raw = JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
+    const users = {};
+    for (const [chatId, record] of Object.entries(raw)) {
+      users[chatId] = normalizeUser(record);
+    }
+    return users;
   } catch (error) {
-    console.error(`${USERS_FILE} ўқилмади, бўш хотирадан бошланяпти:`, error);
+    console.error(`Не удалось прочитать ${USERS_FILE}, начинаем с пустой памяти:`, error);
     return {};
   }
 }
@@ -57,7 +92,7 @@ function saveUsers() {
 
 function getUser(chatId) {
   if (!users[chatId]) {
-    users[chatId] = { name: null, suffix: null, history: [] };
+    users[chatId] = { history: [] };
   }
   return users[chatId];
 }
@@ -75,107 +110,96 @@ function enqueue(chatId, task) {
   return next;
 }
 
-function buildSystemPrompt(user) {
-  if (!user.name || !user.suffix) return basePrompt;
-  return `${basePrompt}\n\n---\n\n# ИЗВЕСТНО О СОБЕСЕДНИКЕ\n\nИмя: ${user.name}\nСуффикс обращения: -${user.suffix.toLowerCase()}\n\nОбращайся к собеседнику как "${user.name}-${user.suffix.toLowerCase()}", знакомство уже состоялось — не спрашивай имя заново.`;
-}
-
-function extractSaveTag(text) {
-  const match = text.match(SAVE_NAME_TAG);
-  if (!match) return { cleanText: text, saved: null };
-  const name = match[1].trim();
-  const suffix = match[2].trim();
-  const cleanText = text.slice(0, match.index).trimEnd();
-  return { cleanText, saved: { name, suffix } };
-}
-
-// Gemini различает роли "user" и "model" (а не "assistant", как у Anthropic) —
-// на диске история хранится в провайдеро-независимом виде и мапится сюда при вызове.
-function toGeminiRole(role) {
-  return role === "assistant" ? "model" : "user";
-}
-
-async function askProfessor(user, userText) {
-  const system = buildSystemPrompt(user);
-  const contents = [
-    ...user.history.map((turn) => ({
-      role: toGeminiRole(turn.role),
-      parts: [{ text: turn.content }],
-    })),
-    { role: "user", parts: [{ text: userText }] },
-  ];
+// Отправляет сообщение модели вместе с историей чата, строго чередующейся ролями
+// user/model, как того требует Gemini API. История пополняется только при успешном
+// непустом ответе — если модель ничего не вернула или API упал, в файл ничего
+// не пишется и предыдущая история не портится.
+async function askTeacher(user, userText) {
+  const contents = [...user.history, { role: "user", parts: [{ text: userText }] }];
 
   const response = await genAI.models.generateContent({
     model: GEMINI_MODEL,
     config: {
-      systemInstruction: system,
+      systemInstruction,
       maxOutputTokens: 1024,
     },
     contents,
   });
 
-  const rawText = response.text ?? "";
-  const { cleanText, saved } = extractSaveTag(rawText);
-
-  if (saved) {
-    user.name = saved.name;
-    user.suffix = saved.suffix;
+  const replyText = response.text?.trim();
+  if (!replyText) {
+    const blockReason = response.promptFeedback?.blockReason;
+    throw new Error(
+      blockReason
+        ? `Gemini не вернул текст ответа (blockReason: ${blockReason})`
+        : "Gemini вернул пустой ответ",
+    );
   }
 
-  user.history.push({ role: "user", content: userText });
-  user.history.push({ role: "assistant", content: rawText });
+  user.history.push({ role: "user", parts: [{ text: userText }] });
+  user.history.push({ role: "model", parts: [{ text: replyText }] });
   if (user.history.length > MAX_HISTORY_MESSAGES) {
     user.history = user.history.slice(-MAX_HISTORY_MESSAGES);
   }
 
-  return cleanText;
+  return replyText;
 }
 
-bot.start(async (ctx) => {
+// Общий обработчик для /start и обычных сообщений: очередь на чат, индикатор
+// набора текста (не критичен — его сбой не должен мешать получить сам ответ),
+// вызов модели и сохранение истории. Ошибки любого рода логируются в консоль
+// и превращаются в одно понятное сообщение пользователю — без нишевых заглушек.
+async function respond(ctx, userText, { resetHistory = false } = {}) {
   const chatId = String(ctx.chat.id);
 
   await enqueue(chatId, async () => {
     const user = getUser(chatId);
-    user.history = [];
+    if (resetHistory) user.history = [];
 
     try {
-      const reply = await askProfessor(user, "/start");
+      await ctx.sendChatAction("typing");
+    } catch (typingError) {
+      console.error(`Не удалось показать индикатор "печатает" (chat ${chatId}):`, typingError);
+    }
+
+    try {
+      const reply = await askTeacher(user, userText);
       await ctx.reply(reply);
+    } catch (error) {
+      console.error(`Ошибка при обращении к Gemini API (chat ${chatId}):`, error);
+      try {
+        await ctx.reply(FALLBACK_ERROR_MESSAGE);
+      } catch (replyError) {
+        console.error(`Не удалось отправить сообщение об ошибке (chat ${chatId}):`, replyError);
+      }
     } finally {
       saveUsers();
     }
   });
+}
+
+bot.start((ctx) => {
+  const langHint = ctx.from?.language_code
+    ? ` (интерфейс Telegram: ${ctx.from.language_code})`
+    : "";
+  return respond(ctx, `/start${langHint}`, { resetHistory: true });
 });
 
 bot.command("reset", async (ctx) => {
   const chatId = String(ctx.chat.id);
-
   await enqueue(chatId, async () => {
-    users[chatId] = { name: null, suffix: null, history: [] };
+    users[chatId] = { history: [] };
     saveUsers();
-    await ctx.reply("Хотирам тозаланди. Қайтадан танишайлик — Ассалому алайкум!");
+    await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с языком?");
   });
 });
 
-bot.on("text", async (ctx) => {
-  const chatId = String(ctx.chat.id);
+bot.on("text", (ctx) => respond(ctx, ctx.message.text));
 
-  await enqueue(chatId, async () => {
-    const user = getUser(chatId);
-    await ctx.sendChatAction("typing");
-
-    try {
-      const reply = await askProfessor(user, ctx.message.text);
-      await ctx.reply(reply);
-    } catch (error) {
-      console.error("Gemini API xatosi:", error);
-      await ctx.reply(
-        "Кечирасиз, фарзандим, ҳозир фикримни жамлай олмадим. Бир оздан сўнг қайта ёзинг.",
-      );
-    } finally {
-      saveUsers();
-    }
-  });
+// Подстраховка: логирует любые ошибки, которые могли ускользнуть из обработчиков выше
+// (например, сбой в самом Telegraf), чтобы процесс не падал молча.
+bot.catch((err, ctx) => {
+  console.error(`Необработанная ошибка Telegraf (chat ${ctx.chat?.id}):`, err);
 });
 
 bot.launch();
