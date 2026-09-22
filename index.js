@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 // DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
 // на Railway — точка монтирования Volume (Settings → Volumes → Mount Path), например /data.
 const DATA_DIR = process.env.DATA_DIR
