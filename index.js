@@ -21,7 +21,12 @@ const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
 // Пара (запрос + ответ) — один "ход"; храним последние 15 ходов на чат.
 const MAX_HISTORY_MESSAGES = 30;
 const FALLBACK_ERROR_MESSAGE =
-  "Извините, сейчас не получилось получить ответ — произошёл сбой при обращении к ИИ. Пожалуйста, попробуйте написать ещё раз через минуту.";
+  "Извините, сейчас не получилось получить ответ — произошёл сбой при обращении к ИИ. Пожалуйста, попробуйте отправить запрос ещё раз через минуту.";
+// Gemini периодически отвечает 503 (перегрузка) или 429 (лимит запросов) — это временные
+// сбои, которые обычно проходят за пару секунд, так что имеет смысл тихо повторить запрос
+// перед тем, как показывать пользователю сообщение об ошибке.
+const MAX_API_RETRIES = 2;
+const RETRY_DELAY_MS = 1500;
 
 if (!TELEGRAM_BOT_TOKEN) {
   throw new Error("TELEGRAM_BOT_TOKEN не найден — проверьте .env.");
@@ -110,21 +115,47 @@ function enqueue(chatId, task) {
   return next;
 }
 
-// Отправляет сообщение модели вместе с историей чата, строго чередующейся ролями
-// user/model, как того требует Gemini API. История пополняется только при успешном
-// непустом ответе — если модель ничего не вернула или API упал, в файл ничего
-// не пишется и предыдущая история не портится.
-async function askTeacher(user, userText) {
-  const contents = [...user.history, { role: "user", parts: [{ text: userText }] }];
+function isRetryableApiError(error) {
+  const status = error?.status;
+  return status === 429 || status === 503 || (typeof status === "number" && status >= 500);
+}
 
-  const response = await genAI.models.generateContent({
-    model: GEMINI_MODEL,
-    config: {
-      systemInstruction,
-      maxOutputTokens: 1024,
+async function generateContentWithRetry(params, chatId) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await genAI.models.generateContent(params);
+    } catch (error) {
+      if (attempt >= MAX_API_RETRIES || !isRetryableApiError(error)) throw error;
+      console.error(
+        `Gemini временно недоступен (chat ${chatId}, попытка ${attempt + 1}/${MAX_API_RETRIES + 1}), повтор через ${RETRY_DELAY_MS} мс:`,
+        error.message ?? error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+  }
+}
+
+// Отправляет запрос модели вместе с историей чата, строго чередующейся ролями
+// user/model, как того требует Gemini API. requestParts — это части именно этого
+// хода (текст или, для голосовых, inlineData с аудио); historyLabel — всегда
+// текстовая метка, которая уходит в сохранённую историю вместо возможного аудио,
+// чтобы будущие запросы не таскали за собой тяжёлые бинарные данные раз за разом.
+// История пополняется только при успешном непустом ответе — если модель ничего
+// не вернула или API упал, в файл ничего не пишется и предыдущая история не портится.
+async function askTranslator(user, requestParts, historyLabel, chatId) {
+  const contents = [...user.history, { role: "user", parts: requestParts }];
+
+  const response = await generateContentWithRetry(
+    {
+      model: GEMINI_MODEL,
+      config: {
+        systemInstruction,
+        maxOutputTokens: 1024,
+      },
+      contents,
     },
-    contents,
-  });
+    chatId,
+  );
 
   const replyText = response.text?.trim();
   if (!replyText) {
@@ -136,7 +167,7 @@ async function askTeacher(user, userText) {
     );
   }
 
-  user.history.push({ role: "user", parts: [{ text: userText }] });
+  user.history.push({ role: "user", parts: [{ text: historyLabel }] });
   user.history.push({ role: "model", parts: [{ text: replyText }] });
   if (user.history.length > MAX_HISTORY_MESSAGES) {
     user.history = user.history.slice(-MAX_HISTORY_MESSAGES);
@@ -145,11 +176,33 @@ async function askTeacher(user, userText) {
   return replyText;
 }
 
-// Общий обработчик для /start и обычных сообщений: очередь на чат, индикатор
+// Скачивает голосовое/аудиосообщение из Telegram и готовит из него части запроса
+// для Gemini (inlineData с base64-содержимым). Возвращается как функция, а не
+// заранее посчитанный результат, — чтобы ошибка скачивания тоже попадала
+// в общий try/catch в respond(), а не падала до него.
+function buildAudioRequest(ctx, media, defaultMimeType, historyLabel) {
+  return async () => {
+    const fileUrl = await ctx.telegram.getFileLink(media.file_id);
+    const fileResponse = await fetch(fileUrl);
+    if (!fileResponse.ok) {
+      throw new Error(`Не удалось скачать файл из Telegram: HTTP ${fileResponse.status}`);
+    }
+    const audioBase64 = Buffer.from(await fileResponse.arrayBuffer()).toString("base64");
+    const mimeType = media.mime_type || defaultMimeType;
+    return {
+      parts: [{ inlineData: { data: audioBase64, mimeType } }],
+      historyLabel,
+    };
+  };
+}
+
+// Общий обработчик для /start, текста и голосовых/аудио: очередь на чат, индикатор
 // набора текста (не критичен — его сбой не должен мешать получить сам ответ),
-// вызов модели и сохранение истории. Ошибки любого рода логируются в консоль
-// и превращаются в одно понятное сообщение пользователю — без нишевых заглушек.
-async function respond(ctx, userText, { resetHistory = false } = {}) {
+// подготовка запроса (buildRequest — текст сразу или скачивание аудио), вызов
+// модели и сохранение истории. Любая ошибка на любом из этих шагов логируется
+// в консоль и превращается в одно понятное сообщение пользователю — без заглушек
+// на конкретном языке и без падения чата.
+async function respond(ctx, buildRequest, { resetHistory = false } = {}) {
   const chatId = String(ctx.chat.id);
 
   await enqueue(chatId, async () => {
@@ -163,10 +216,11 @@ async function respond(ctx, userText, { resetHistory = false } = {}) {
     }
 
     try {
-      const reply = await askTeacher(user, userText);
+      const { parts, historyLabel } = await buildRequest();
+      const reply = await askTranslator(user, parts, historyLabel, chatId);
       await ctx.reply(reply);
     } catch (error) {
-      console.error(`Ошибка при обращении к Gemini API (chat ${chatId}):`, error);
+      console.error(`Ошибка при обработке запроса (chat ${chatId}):`, error);
       try {
         await ctx.reply(FALLBACK_ERROR_MESSAGE);
       } catch (replyError) {
@@ -182,7 +236,10 @@ bot.start((ctx) => {
   const langHint = ctx.from?.language_code
     ? ` (интерфейс Telegram: ${ctx.from.language_code})`
     : "";
-  return respond(ctx, `/start${langHint}`, { resetHistory: true });
+  const startText = `/start${langHint}`;
+  return respond(ctx, async () => ({ parts: [{ text: startText }], historyLabel: startText }), {
+    resetHistory: true,
+  });
 });
 
 bot.command("reset", async (ctx) => {
@@ -190,11 +247,21 @@ bot.command("reset", async (ctx) => {
   await enqueue(chatId, async () => {
     users[chatId] = { history: [] };
     saveUsers();
-    await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с языком?");
+    await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с переводом?");
   });
 });
 
-bot.on("text", (ctx) => respond(ctx, ctx.message.text));
+bot.on("text", (ctx) =>
+  respond(ctx, async () => ({ parts: [{ text: ctx.message.text }], historyLabel: ctx.message.text })),
+);
+
+bot.on("voice", (ctx) =>
+  respond(ctx, buildAudioRequest(ctx, ctx.message.voice, "audio/ogg", "[голосовое сообщение]")),
+);
+
+bot.on("audio", (ctx) =>
+  respond(ctx, buildAudioRequest(ctx, ctx.message.audio, "audio/mpeg", "[аудиофайл]")),
+);
 
 // Подстраховка: логирует любые ошибки, которые могли ускользнуть из обработчиков выше
 // (например, сбой в самом Telegraf), чтобы процесс не падал молча.
