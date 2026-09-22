@@ -4,12 +4,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import "dotenv/config";
 import { Telegraf } from "telegraf";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-5";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 // DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
 // на Railway — точка монтирования Volume (Settings → Volumes → Mount Path), например /data.
 const DATA_DIR = process.env.DATA_DIR
@@ -23,9 +24,12 @@ const SAVE_NAME_TAG = /\[\[SAVE_NAME:\s*([^|]+)\|(ХОН|БЕК|ЖОН)\s*\]\]\s
 if (!TELEGRAM_BOT_TOKEN) {
   throw new Error("TELEGRAM_BOT_TOKEN топилмади — .env файлини текширинг.");
 }
+if (!GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY топилмади — .env файлини текширинг.");
+}
 
 const basePrompt = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
-const anthropic = new Anthropic();
+const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -59,7 +63,7 @@ function getUser(chatId) {
 }
 
 // Последовательная очередь на чат: не даёт двум быстрым сообщениям одного и того же
-// пользователя перемешать историю диалога, пока оба ответа ждут Claude API.
+// пользователя перемешать историю диалога, пока оба ответа ждут Gemini API.
 const chatQueues = new Map();
 function enqueue(chatId, task) {
   const previous = chatQueues.get(chatId) ?? Promise.resolve();
@@ -85,22 +89,32 @@ function extractSaveTag(text) {
   return { cleanText, saved: { name, suffix } };
 }
 
+// Gemini различает роли "user" и "model" (а не "assistant", как у Anthropic) —
+// на диске история хранится в провайдеро-независимом виде и мапится сюда при вызове.
+function toGeminiRole(role) {
+  return role === "assistant" ? "model" : "user";
+}
+
 async function askProfessor(user, userText) {
   const system = buildSystemPrompt(user);
-  const messages = [
-    ...user.history,
-    { role: "user", content: userText },
+  const contents = [
+    ...user.history.map((turn) => ({
+      role: toGeminiRole(turn.role),
+      parts: [{ text: turn.content }],
+    })),
+    { role: "user", parts: [{ text: userText }] },
   ];
 
-  const response = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 1024,
-    system,
-    messages,
+  const response = await genAI.models.generateContent({
+    model: GEMINI_MODEL,
+    config: {
+      systemInstruction: system,
+      maxOutputTokens: 1024,
+    },
+    contents,
   });
 
-  const textBlock = response.content.find((block) => block.type === "text");
-  const rawText = textBlock?.text ?? "";
+  const rawText = response.text ?? "";
   const { cleanText, saved } = extractSaveTag(rawText);
 
   if (saved) {
@@ -154,7 +168,7 @@ bot.on("text", async (ctx) => {
       const reply = await askProfessor(user, ctx.message.text);
       await ctx.reply(reply);
     } catch (error) {
-      console.error("Claude API xatosi:", error);
+      console.error("Gemini API xatosi:", error);
       await ctx.reply(
         "Кечирасиз, фарзандим, ҳозир фикримни жамлай олмадим. Бир оздан сўнг қайта ёзинг.",
       );
