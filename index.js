@@ -47,11 +47,13 @@ const FALLBACK_ERROR_MESSAGE =
 const VOICE_STUB_MESSAGE =
   "Пока что для стабильной работы и экономии квоты я принимаю только текстовые сообщения. " +
   "Пожалуйста, напишите текстом — с радостью переведу или отвечу!";
-// Gemini периодически отвечает 503 (перегрузка) или 429 (лимит запросов) — это временные
-// сбои, которые обычно проходят за пару секунд, так что имеет смысл тихо повторить запрос
-// перед тем, как показывать пользователю сообщение об ошибке.
-const MAX_API_RETRIES = 2;
-const RETRY_DELAY_MS = 1500;
+// Gemini периодически отвечает 429 (RESOURCE_EXHAUSTED — исчерпан лимит запросов) или
+// 503 (временная перегрузка) — это восстановимые сбои, при которых имеет смысл подождать
+// и повторить запрос, а не сразу сдаваться. Задержка между повторами растёт экспоненциально
+// (1с, 2с, 4с, ...), чтобы не долбить и без того перегруженный/исчерпанный API впустую.
+const BACKOFF_MAX_ATTEMPTS = 3; // всего до 4 попыток на одном ключе, прежде чем сдаться/сменить ключ
+const BACKOFF_BASE_MS = 1000;
+const BACKOFF_MAX_MS = 15000;
 
 // Намеренно нигде ниже нет throw за отсутствующие ключи: жёсткий крах на старте означает
 // краш-луп деплоя на Railway (контейнер рестартует снова и снова, а health-check никогда
@@ -178,12 +180,43 @@ function logDetailedError(label, error) {
   }
 }
 
+// Задержка перед очередным повтором: удваивается с каждой попыткой (1с, 2с, 4с, 8с...),
+// упирается в потолок BACKOFF_MAX_MS и получает небольшой случайный джиттер (±25%),
+// чтобы параллельные запросы от разных чатов не синхронизировались и не били по API
+// одной волной после общего сбоя.
+function backoffDelayMs(attempt) {
+  const exponential = Math.min(BACKOFF_BASE_MS * 2 ** attempt, BACKOFF_MAX_MS);
+  const jitter = exponential * 0.25 * Math.random();
+  return Math.round(exponential + jitter);
+}
+
+// Вызывает generateContent на одном конкретном клиенте (ключе) с экспоненциальным
+// backoff при 429 (RESOURCE_EXHAUSTED) и 503 (перегрузка): вместо фиксированной паузы
+// или немедленного отказа — растущая задержка между повторами, дающая квоте/сервису
+// шанс восстановиться. Каждая попытка логируется подробно через logDetailedError.
+async function generateContentWithBackoff(client, params, label) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await client.models.generateContent(params);
+    } catch (error) {
+      logDetailedError(`Ошибка Gemini API (${label}, попытка ${attempt + 1}/${BACKOFF_MAX_ATTEMPTS + 1})`, error);
+      if (attempt >= BACKOFF_MAX_ATTEMPTS || !isRetryableApiError(error)) throw error;
+      const delay = backoffDelayMs(attempt);
+      console.warn(`Повтор через ${delay} мс (экспоненциальный backoff)...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 // Пробует каждый настроенный ключ Gemini по кругу, начиная с currentGeminiKeyIndex.
-// При обычных временных сбоях (503/5xx) — до MAX_API_RETRIES повторов с задержкой
-// на ТОМ ЖЕ ключе, как и раньше. При 429 (квота именно этого ключа исчерпана) —
-// без задержки сразу переключается на следующий ключ и пробует его; currentGeminiKeyIndex
-// обновляется, так что следующий вызов (из этого же или другого чата) начнёт сразу
-// с рабочего ключа, а не будет заново упираться в исчерпанный. Если 429 вернули все
+// На каждом ключе сначала честно выбирается весь бюджет экспоненциального backoff
+// (generateContentWithBackoff) — это покрывает и 429, и 503. Если после этого ключ
+// всё ещё отвечает именно 429 (RESOURCE_EXHAUSTED — квота этого ключа исчерпана,
+// а не временная перегрузка), происходит переключение на следующий ключ; для любой
+// другой ошибки (в т.ч. 503, если её не удалось пережить backoff'ом) переключение
+// бессмысленно — она не зависит от того, какой ключ используется, поэтому бросаем
+// сразу. currentGeminiKeyIndex запоминается между вызовами, так что следующий запрос
+// (из этого же или другого чата) начнёт сразу с рабочего ключа. Если 429 вернули все
 // ключи по очереди — сдаётся и пробрасывает последнюю ошибку.
 async function generateContentWithRetry(params, chatId) {
   if (geminiClients.length === 0) {
@@ -197,31 +230,23 @@ async function generateContentWithRetry(params, chatId) {
     const keyIndex = currentGeminiKeyIndex;
     const client = geminiClients[keyIndex];
 
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await client.models.generateContent(params);
-      } catch (error) {
-        lastError = error;
-        logDetailedError(
-          `Ошибка Gemini API (chat ${chatId}, ключ #${keyIndex + 1}/${totalKeys}, попытка ${attempt + 1}/${MAX_API_RETRIES + 1})`,
-          error,
-        );
-
-        if (error?.status === 429) {
-          // Квота этого ключа исчерпана — переключение на следующий, без задержки.
-          break;
-        }
-        if (attempt >= MAX_API_RETRIES || !isRetryableApiError(error)) throw error;
-        console.error(`Повтор через ${RETRY_DELAY_MS} мс...`);
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-      }
-    }
-
-    currentGeminiKeyIndex = (keyIndex + 1) % totalKeys;
-    if (keyAttempt < totalKeys - 1) {
-      console.warn(
-        `Ключ Gemini #${keyIndex + 1}/${totalKeys} исчерпан (429), переключаюсь на ключ #${currentGeminiKeyIndex + 1}/${totalKeys}.`,
+    try {
+      return await generateContentWithBackoff(
+        client,
+        params,
+        `chat ${chatId}, ключ #${keyIndex + 1}/${totalKeys}`,
       );
+    } catch (error) {
+      lastError = error;
+      if (error?.status !== 429) throw error;
+
+      currentGeminiKeyIndex = (keyIndex + 1) % totalKeys;
+      if (keyAttempt < totalKeys - 1) {
+        console.warn(
+          `Ключ Gemini #${keyIndex + 1}/${totalKeys} по-прежнему исчерпан (429) после backoff-повторов, ` +
+            `переключаюсь на ключ #${currentGeminiKeyIndex + 1}/${totalKeys}.`,
+        );
+      }
     }
   }
 
