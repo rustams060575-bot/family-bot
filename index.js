@@ -42,6 +42,11 @@ const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
 const MAX_HISTORY_MESSAGES = 30;
 const FALLBACK_ERROR_MESSAGE =
   "Извините, сейчас не получилось получить ответ — произошёл сбой при обращении к ИИ. Пожалуйста, попробуйте отправить запрос ещё раз через минуту.";
+// Голосовые/аудио временно не обрабатываются моделью — эта заглушка отвечает сразу,
+// не тратя запрос к Gemini API (ради стабильности и экономии квоты ключей).
+const VOICE_STUB_MESSAGE =
+  "Пока что для стабильной работы и экономии квоты я принимаю только текстовые сообщения. " +
+  "Пожалуйста, напишите текстом — с радостью переведу или отвечу!";
 // Gemini периодически отвечает 503 (перегрузка) или 429 (лимит запросов) — это временные
 // сбои, которые обычно проходят за пару секунд, так что имеет смысл тихо повторить запрос
 // перед тем, как показывать пользователю сообщение об ошибке.
@@ -225,10 +230,9 @@ async function generateContentWithRetry(params, chatId) {
 }
 
 // Отправляет запрос модели вместе с историей чата, строго чередующейся ролями
-// user/model, как того требует Gemini API. requestParts — это части именно этого
-// хода (текст или, для голосовых, inlineData с аудио); historyLabel — всегда
-// текстовая метка, которая уходит в сохранённую историю вместо возможного аудио,
-// чтобы будущие запросы не таскали за собой тяжёлые бинарные данные раз за разом.
+// user/model, как того требует Gemini API. requestParts — части именно этого хода
+// (сейчас это всегда текст: голосовые/аудио отсекаются заглушкой раньше и сюда не
+// попадают); historyLabel — та же реплика, что уходит в сохранённую историю.
 // История пополняется только при успешном непустом ответе — если модель ничего
 // не вернула или API упал, в файл ничего не пишется и предыдущая история не портится.
 async function askTranslator(user, requestParts, historyLabel, chatId) {
@@ -266,47 +270,10 @@ async function askTranslator(user, requestParts, historyLabel, chatId) {
   return replyText;
 }
 
-// Скачивает голосовое/аудиосообщение из Telegram (через ctx.telegram.getFileLink —
-// это и есть bot.telegram.getFileLink, доступный на объекте контекста конкретного
-// обновления) и готовит из него части запроса для Gemini: inlineData с base64-
-// содержимым и правильным mimeType (audio/ogg для голосовых, audio/mpeg для
-// аудиофайлов, либо тот mime_type, что прислал сам Telegram). Возвращается как
-// функция, а не заранее посчитанный результат, — чтобы ошибка скачивания тоже
-// попадала в общий try/catch в respond(), а не падала до него. Ошибка на этом шаге
-// логируется отдельно от ошибок самого Gemini API, чтобы в логах Railway сразу было
-// видно, что именно не сработало: скачивание из Telegram или обращение к модели.
-function buildAudioRequest(ctx, media, defaultMimeType, historyLabel) {
-  return async () => {
-    try {
-      const fileUrl = await ctx.telegram.getFileLink(media.file_id);
-      const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) {
-        throw new Error(
-          `Telegram отдал HTTP ${fileResponse.status} при скачивании файла по ссылке ${fileUrl}`,
-        );
-      }
-      const audioBase64 = Buffer.from(await fileResponse.arrayBuffer()).toString("base64");
-      const mimeType = media.mime_type || defaultMimeType;
-      return {
-        parts: [{ inlineData: { data: audioBase64, mimeType } }],
-        historyLabel,
-      };
-    } catch (error) {
-      logDetailedError(
-        `Не удалось скачать голосовое/аудиосообщение из Telegram (file_id: ${media.file_id})`,
-        error,
-      );
-      throw error;
-    }
-  };
-}
-
-// Общий обработчик для /start, текста и голосовых/аудио: очередь на чат, индикатор
-// набора текста (не критичен — его сбой не должен мешать получить сам ответ),
-// подготовка запроса (buildRequest — текст сразу или скачивание аудио), вызов
-// модели и сохранение истории. Любая ошибка на любом из этих шагов логируется
-// в консоль и превращается в одно понятное сообщение пользователю — без заглушек
-// на конкретном языке и без падения чата.
+// Общий обработчик для /start и текста: очередь на чат, индикатор набора текста
+// (не критичен — его сбой не должен мешать получить сам ответ), подготовка запроса
+// через buildRequest, вызов модели и сохранение истории. Любая ошибка логируется
+// в консоль и превращается в одно понятное сообщение пользователю, без падения чата.
 async function respond(ctx, buildRequest, { resetHistory = false } = {}) {
   const chatId = String(ctx.chat.id);
 
@@ -361,13 +328,10 @@ if (bot) {
     respond(ctx, async () => ({ parts: [{ text: ctx.message.text }], historyLabel: ctx.message.text })),
   );
 
-  bot.on("voice", (ctx) =>
-    respond(ctx, buildAudioRequest(ctx, ctx.message.voice, "audio/ogg", "[голосовое сообщение]")),
-  );
-
-  bot.on("audio", (ctx) =>
-    respond(ctx, buildAudioRequest(ctx, ctx.message.audio, "audio/mpeg", "[аудиофайл]")),
-  );
+  // Голосовые и аудиосообщения сейчас не обрабатываются моделью — заглушка отвечает
+  // сразу, без обращения к Gemini API и без очереди/истории: это временное решение
+  // ради стабильности и экономии квоты ключей, а не сбой, поэтому в лог не пишем.
+  bot.on(["voice", "audio"], (ctx) => ctx.reply(VOICE_STUB_MESSAGE));
 
   // Подстраховка: логирует любые ошибки, которые могли ускользнуть из обработчиков выше
   // (например, сбой в самом Telegraf), чтобы процесс не падал молча.
