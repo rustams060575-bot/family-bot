@@ -42,13 +42,13 @@ const FALLBACK_ERROR_MESSAGE =
 const MAX_API_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
+// Намеренно нигде ниже нет throw за отсутствующие ключи: жёсткий крах на старте означает
+// краш-луп деплоя на Railway (контейнер рестартует снова и снова, а health-check никогда
+// не поднимается). Вместо этого предупреждаем в консоль и позволяем процессу запуститься —
+// каждая отсутствующая интеграция просто не активируется (см. bot = null / genAI = null
+// ниже), а health-check сервер в самом конце файла работает в любом случае.
 if (!TELEGRAM_BOT_TOKEN) {
-  // Намеренно не throw: жёсткий крах здесь означает краш-луп деплоя на Railway
-  // (контейнер рестартует снова и снова, а health-check никогда не поднимается).
-  // Вместо этого логируем понятную причину и просто не запускаем Telegram-часть —
-  // остальной процесс (в т.ч. health-check сервер) продолжает работать, чтобы
-  // проблему можно было спокойно увидеть в логах и поправить переменные окружения.
-  console.error(
+  console.warn(
     `Токен Telegram-бота не найден ни в одной из переменных окружения: ${TELEGRAM_TOKEN_ENV_VARS.join(", ")}. ` +
       "Telegram-бот не будет запущен, пока одна из них не будет задана.",
   );
@@ -56,11 +56,14 @@ if (!TELEGRAM_BOT_TOKEN) {
   console.log(`Токен Telegram-бота взят из переменной ${telegramToken.name}.`);
 }
 if (!GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY не найден — проверьте .env.");
+  console.warn(
+    "GEMINI_API_KEY не найден. Бот запустится, но на любой запрос будет отвечать сообщением " +
+      "об ошибке, пока переменная не будет задана.",
+  );
 }
 
 const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
-const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+const genAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 const bot = TELEGRAM_BOT_TOKEN ? new Telegraf(TELEGRAM_BOT_TOKEN) : null;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -145,6 +148,9 @@ function isRetryableApiError(error) {
 }
 
 async function generateContentWithRetry(params, chatId) {
+  if (!genAI) {
+    throw new Error("GEMINI_API_KEY не задан — интеграция с Gemini недоступна.");
+  }
   for (let attempt = 0; ; attempt++) {
     try {
       return await genAI.models.generateContent(params);
@@ -300,17 +306,17 @@ if (bot) {
 
 // Простой health-check эндпоинт — нужен облачным платформам (Railway, Render и т.п.),
 // чтобы понимать, что процесс жив; сам бот работает через long polling, а не через HTTP.
-// Держим его отдельно от статуса Telegram-токена специально: даже если бот не запустился
-// из-за отсутствующей переменной окружения, порт остаётся открытым и деплой не падает.
+// Держим его отдельно от статуса ключей специально: даже если чего-то не хватает,
+// порт остаётся открытым и деплой не падает — сюда просто выводится, чего именно нет.
 const PORT = process.env.PORT || 3000;
 http
   .createServer((_req, res) => {
+    const problems = [];
+    if (!bot) problems.push(`Telegram-токен не найден (${TELEGRAM_TOKEN_ENV_VARS.join(", ")})`);
+    if (!genAI) problems.push("GEMINI_API_KEY не найден");
+
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end(
-      bot
-        ? "family-bot ishlayapti"
-        : `family-bot: Telegram-токен не найден (${TELEGRAM_TOKEN_ENV_VARS.join(", ")}), бот не запущен`,
-    );
+    res.end(problems.length ? `family-bot: ${problems.join("; ")}` : "family-bot ishlayapti");
   })
   .listen(PORT, () => console.log(`Health-check server: port ${PORT}`));
 
