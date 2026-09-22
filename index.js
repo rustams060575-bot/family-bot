@@ -160,9 +160,32 @@ function enqueue(chatId, task) {
   return next;
 }
 
+// Строковые gRPC-статусы Google, которые означают "временно недоступно, можно повторить":
+// UNAVAILABLE — обычно код 503 (перегрузка на стороне Google),
+// RESOURCE_EXHAUSTED — обычно код 429 (исчерпан лимит запросов/квота).
+const RETRYABLE_STATUS_NAMES = new Set(["UNAVAILABLE", "RESOURCE_EXHAUSTED"]);
+
 function isRetryableApiError(error) {
-  const status = error?.status;
-  return status === 429 || status === 503 || (typeof status === "number" && status >= 500);
+  const httpStatus = error?.status;
+  if (httpStatus === 429 || httpStatus === 503 || (typeof httpStatus === "number" && httpStatus >= 500)) {
+    return true;
+  }
+  // На случай, если числовой HTTP-статус почему-то не выставлен (другая версия SDK,
+  // изменившийся формат ошибки) — подстраховка: тело ответа @google/genai ApiError
+  // приходит как JSON-строка вида {"error":{"code":503,"status":"UNAVAILABLE"}},
+  // так что пробуем распознать статус и по имени внутри message.
+  if (typeof httpStatus === "string" && RETRYABLE_STATUS_NAMES.has(httpStatus)) {
+    return true;
+  }
+  if (typeof error?.message === "string") {
+    try {
+      const parsed = JSON.parse(error.message);
+      if (RETRYABLE_STATUS_NAMES.has(parsed?.error?.status)) return true;
+    } catch {
+      // message не JSON — это не наш формат ошибки, просто игнорируем.
+    }
+  }
+  return false;
 }
 
 // Единая точка подробного логирования сбоев — печатает message, stack и (если есть)
