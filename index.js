@@ -8,7 +8,21 @@ import { GoogleGenAI } from "@google/genai";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+// Имена переменных окружения, в которых может лежать токен Telegram-бота — проверяются
+// по порядку, побеждает первая найденная непустая. Разные хостинги/шаблоны деплоя иногда
+// называют её по-разному, так что поддерживаем оба распространённых варианта.
+const TELEGRAM_TOKEN_ENV_VARS = ["TELEGRAM_BOT_TOKEN", "BOT_TOKEN"];
+
+function readFirstEnv(names) {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return { name, value };
+  }
+  return null;
+}
+
+const telegramToken = readFirstEnv(TELEGRAM_TOKEN_ENV_VARS);
+const TELEGRAM_BOT_TOKEN = telegramToken?.value;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 // DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
@@ -29,7 +43,17 @@ const MAX_API_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
 if (!TELEGRAM_BOT_TOKEN) {
-  throw new Error("TELEGRAM_BOT_TOKEN не найден — проверьте .env.");
+  // Намеренно не throw: жёсткий крах здесь означает краш-луп деплоя на Railway
+  // (контейнер рестартует снова и снова, а health-check никогда не поднимается).
+  // Вместо этого логируем понятную причину и просто не запускаем Telegram-часть —
+  // остальной процесс (в т.ч. health-check сервер) продолжает работать, чтобы
+  // проблему можно было спокойно увидеть в логах и поправить переменные окружения.
+  console.error(
+    `Токен Telegram-бота не найден ни в одной из переменных окружения: ${TELEGRAM_TOKEN_ENV_VARS.join(", ")}. ` +
+      "Telegram-бот не будет запущен, пока одна из них не будет задана.",
+  );
+} else if (telegramToken.name !== TELEGRAM_TOKEN_ENV_VARS[0]) {
+  console.log(`Токен Telegram-бота взят из переменной ${telegramToken.name}.`);
 }
 if (!GEMINI_API_KEY) {
   throw new Error("GEMINI_API_KEY не найден — проверьте .env.");
@@ -37,7 +61,7 @@ if (!GEMINI_API_KEY) {
 
 const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
 const genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+const bot = TELEGRAM_BOT_TOKEN ? new Telegraf(TELEGRAM_BOT_TOKEN) : null;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -232,55 +256,63 @@ async function respond(ctx, buildRequest, { resetHistory = false } = {}) {
   });
 }
 
-bot.start((ctx) => {
-  const langHint = ctx.from?.language_code
-    ? ` (интерфейс Telegram: ${ctx.from.language_code})`
-    : "";
-  const startText = `/start${langHint}`;
-  return respond(ctx, async () => ({ parts: [{ text: startText }], historyLabel: startText }), {
-    resetHistory: true,
+if (bot) {
+  bot.start((ctx) => {
+    const langHint = ctx.from?.language_code
+      ? ` (интерфейс Telegram: ${ctx.from.language_code})`
+      : "";
+    const startText = `/start${langHint}`;
+    return respond(ctx, async () => ({ parts: [{ text: startText }], historyLabel: startText }), {
+      resetHistory: true,
+    });
   });
-});
 
-bot.command("reset", async (ctx) => {
-  const chatId = String(ctx.chat.id);
-  await enqueue(chatId, async () => {
-    users[chatId] = { history: [] };
-    saveUsers();
-    await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с переводом?");
+  bot.command("reset", async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    await enqueue(chatId, async () => {
+      users[chatId] = { history: [] };
+      saveUsers();
+      await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с переводом?");
+    });
   });
-});
 
-bot.on("text", (ctx) =>
-  respond(ctx, async () => ({ parts: [{ text: ctx.message.text }], historyLabel: ctx.message.text })),
-);
+  bot.on("text", (ctx) =>
+    respond(ctx, async () => ({ parts: [{ text: ctx.message.text }], historyLabel: ctx.message.text })),
+  );
 
-bot.on("voice", (ctx) =>
-  respond(ctx, buildAudioRequest(ctx, ctx.message.voice, "audio/ogg", "[голосовое сообщение]")),
-);
+  bot.on("voice", (ctx) =>
+    respond(ctx, buildAudioRequest(ctx, ctx.message.voice, "audio/ogg", "[голосовое сообщение]")),
+  );
 
-bot.on("audio", (ctx) =>
-  respond(ctx, buildAudioRequest(ctx, ctx.message.audio, "audio/mpeg", "[аудиофайл]")),
-);
+  bot.on("audio", (ctx) =>
+    respond(ctx, buildAudioRequest(ctx, ctx.message.audio, "audio/mpeg", "[аудиофайл]")),
+  );
 
-// Подстраховка: логирует любые ошибки, которые могли ускользнуть из обработчиков выше
-// (например, сбой в самом Telegraf), чтобы процесс не падал молча.
-bot.catch((err, ctx) => {
-  console.error(`Необработанная ошибка Telegraf (chat ${ctx.chat?.id}):`, err);
-});
+  // Подстраховка: логирует любые ошибки, которые могли ускользнуть из обработчиков выше
+  // (например, сбой в самом Telegraf), чтобы процесс не падал молча.
+  bot.catch((err, ctx) => {
+    console.error(`Необработанная ошибка Telegraf (chat ${ctx.chat?.id}):`, err);
+  });
 
-bot.launch();
-console.log("Family bot ishga tushdi.");
+  bot.launch();
+  console.log("Family bot ishga tushdi.");
+}
 
 // Простой health-check эндпоинт — нужен облачным платформам (Railway, Render и т.п.),
 // чтобы понимать, что процесс жив; сам бот работает через long polling, а не через HTTP.
+// Держим его отдельно от статуса Telegram-токена специально: даже если бот не запустился
+// из-за отсутствующей переменной окружения, порт остаётся открытым и деплой не падает.
 const PORT = process.env.PORT || 3000;
 http
   .createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("family-bot ishlayapti");
+    res.end(
+      bot
+        ? "family-bot ishlayapti"
+        : `family-bot: Telegram-токен не найден (${TELEGRAM_TOKEN_ENV_VARS.join(", ")}), бот не запущен`,
+    );
   })
   .listen(PORT, () => console.log(`Health-check server: port ${PORT}`));
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+process.once("SIGINT", () => bot?.stop("SIGINT"));
+process.once("SIGTERM", () => bot?.stop("SIGTERM"));
