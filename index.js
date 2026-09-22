@@ -23,7 +23,13 @@ function readFirstEnv(names) {
 
 const telegramToken = readFirstEnv(TELEGRAM_TOKEN_ENV_VARS);
 const TELEGRAM_BOT_TOKEN = telegramToken?.value;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// До трёх ключей Gemini — GEMINI_API_KEY обязателен как основной, _2 и _3 опциональны.
+// Используются как пул: при 429 (квота конкретного ключа исчерпана) бот переключается
+// на следующий по кругу, вместо того чтобы сразу сдаваться.
+const GEMINI_API_KEY_ENV_VARS = ["GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"];
+const GEMINI_API_KEYS = GEMINI_API_KEY_ENV_VARS.map((name) => process.env[name]).filter(
+  (value) => !!value,
+);
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 // DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
 // на Railway — точка монтирования Volume (Settings → Volumes → Mount Path), например /data.
@@ -45,7 +51,7 @@ const RETRY_DELAY_MS = 1500;
 // Намеренно нигде ниже нет throw за отсутствующие ключи: жёсткий крах на старте означает
 // краш-луп деплоя на Railway (контейнер рестартует снова и снова, а health-check никогда
 // не поднимается). Вместо этого предупреждаем в консоль и позволяем процессу запуститься —
-// каждая отсутствующая интеграция просто не активируется (см. bot = null / genAI = null
+// каждая отсутствующая интеграция просто не активируется (см. bot = null / geminiClients = []
 // ниже), а health-check сервер в самом конце файла работает в любом случае.
 if (!TELEGRAM_BOT_TOKEN) {
   console.warn(
@@ -55,15 +61,20 @@ if (!TELEGRAM_BOT_TOKEN) {
 } else if (telegramToken.name !== TELEGRAM_TOKEN_ENV_VARS[0]) {
   console.log(`Токен Telegram-бота взят из переменной ${telegramToken.name}.`);
 }
-if (!GEMINI_API_KEY) {
+if (GEMINI_API_KEYS.length === 0) {
   console.warn(
-    "GEMINI_API_KEY не найден. Бот запустится, но на любой запрос будет отвечать сообщением " +
-      "об ошибке, пока переменная не будет задана.",
+    `Ни один ключ Gemini не найден (проверены: ${GEMINI_API_KEY_ENV_VARS.join(", ")}). ` +
+      "Бот запустится, но на любой запрос будет отвечать сообщением об ошибке, пока хотя бы одна переменная не будет задана.",
   );
+} else if (GEMINI_API_KEYS.length > 1) {
+  console.log(`Настроено ключей Gemini: ${GEMINI_API_KEYS.length} (переключение при 429 включено).`);
 }
 
 const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
-const genAI = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+const geminiClients = GEMINI_API_KEYS.map((apiKey) => new GoogleGenAI({ apiKey }));
+// Индекс ключа/клиента, который используется прямо сейчас — общий для всех чатов
+// и переживает между запросами, чтобы не долбиться в уже исчерпанный ключ заново.
+let currentGeminiKeyIndex = 0;
 const bot = TELEGRAM_BOT_TOKEN ? new Telegraf(TELEGRAM_BOT_TOKEN) : null;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -162,23 +173,55 @@ function logDetailedError(label, error) {
   }
 }
 
+// Пробует каждый настроенный ключ Gemini по кругу, начиная с currentGeminiKeyIndex.
+// При обычных временных сбоях (503/5xx) — до MAX_API_RETRIES повторов с задержкой
+// на ТОМ ЖЕ ключе, как и раньше. При 429 (квота именно этого ключа исчерпана) —
+// без задержки сразу переключается на следующий ключ и пробует его; currentGeminiKeyIndex
+// обновляется, так что следующий вызов (из этого же или другого чата) начнёт сразу
+// с рабочего ключа, а не будет заново упираться в исчерпанный. Если 429 вернули все
+// ключи по очереди — сдаётся и пробрасывает последнюю ошибку.
 async function generateContentWithRetry(params, chatId) {
-  if (!genAI) {
-    throw new Error("GEMINI_API_KEY не задан — интеграция с Gemini недоступна.");
+  if (geminiClients.length === 0) {
+    throw new Error("Не задан ни один ключ Gemini (GEMINI_API_KEY / _2 / _3) — интеграция недоступна.");
   }
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await genAI.models.generateContent(params);
-    } catch (error) {
-      logDetailedError(
-        `Ошибка Gemini API (chat ${chatId}, попытка ${attempt + 1}/${MAX_API_RETRIES + 1})`,
-        error,
+
+  const totalKeys = geminiClients.length;
+  let lastError;
+
+  for (let keyAttempt = 0; keyAttempt < totalKeys; keyAttempt++) {
+    const keyIndex = currentGeminiKeyIndex;
+    const client = geminiClients[keyIndex];
+
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await client.models.generateContent(params);
+      } catch (error) {
+        lastError = error;
+        logDetailedError(
+          `Ошибка Gemini API (chat ${chatId}, ключ #${keyIndex + 1}/${totalKeys}, попытка ${attempt + 1}/${MAX_API_RETRIES + 1})`,
+          error,
+        );
+
+        if (error?.status === 429) {
+          // Квота этого ключа исчерпана — переключение на следующий, без задержки.
+          break;
+        }
+        if (attempt >= MAX_API_RETRIES || !isRetryableApiError(error)) throw error;
+        console.error(`Повтор через ${RETRY_DELAY_MS} мс...`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      }
+    }
+
+    currentGeminiKeyIndex = (keyIndex + 1) % totalKeys;
+    if (keyAttempt < totalKeys - 1) {
+      console.warn(
+        `Ключ Gemini #${keyIndex + 1}/${totalKeys} исчерпан (429), переключаюсь на ключ #${currentGeminiKeyIndex + 1}/${totalKeys}.`,
       );
-      if (attempt >= MAX_API_RETRIES || !isRetryableApiError(error)) throw error;
-      console.error(`Повтор через ${RETRY_DELAY_MS} мс...`);
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
   }
+
+  console.error(`Все ${totalKeys} ключ(а/ей) Gemini вернули 429 подряд — запрос не выполнен.`);
+  throw lastError;
 }
 
 // Отправляет запрос модели вместе с историей чата, строго чередующейся ролями
@@ -345,7 +388,9 @@ http
   .createServer((_req, res) => {
     const problems = [];
     if (!bot) problems.push(`Telegram-токен не найден (${TELEGRAM_TOKEN_ENV_VARS.join(", ")})`);
-    if (!genAI) problems.push("GEMINI_API_KEY не найден");
+    if (geminiClients.length === 0) {
+      problems.push(`ни один ключ Gemini не найден (${GEMINI_API_KEY_ENV_VARS.join(", ")})`);
+    }
 
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end(problems.length ? `family-bot: ${problems.join("; ")}` : "family-bot ishlayapti");
