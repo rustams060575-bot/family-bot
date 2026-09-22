@@ -147,6 +147,21 @@ function isRetryableApiError(error) {
   return status === 429 || status === 503 || (typeof status === "number" && status >= 500);
 }
 
+// Единая точка подробного логирования сбоев — печатает message, stack и (если есть)
+// HTTP-статус отдельными строками, чтобы в логах Railway была видна точная причина,
+// а не просто "[object Object]" или обрезанная строка. У ApiError из @google/genai
+// поле message уже содержит сырое тело ответа API в виде JSON-строки — status выводим
+// отдельно, чтобы его было легко найти глазами при просмотре логов.
+function logDetailedError(label, error) {
+  console.error(`${label}: ${error?.message ?? error}`);
+  if (typeof error?.status === "number") {
+    console.error(`  HTTP-статус: ${error.status}`);
+  }
+  if (error?.stack) {
+    console.error(error.stack);
+  }
+}
+
 async function generateContentWithRetry(params, chatId) {
   if (!genAI) {
     throw new Error("GEMINI_API_KEY не задан — интеграция с Gemini недоступна.");
@@ -155,11 +170,12 @@ async function generateContentWithRetry(params, chatId) {
     try {
       return await genAI.models.generateContent(params);
     } catch (error) {
-      if (attempt >= MAX_API_RETRIES || !isRetryableApiError(error)) throw error;
-      console.error(
-        `Gemini временно недоступен (chat ${chatId}, попытка ${attempt + 1}/${MAX_API_RETRIES + 1}), повтор через ${RETRY_DELAY_MS} мс:`,
-        error.message ?? error,
+      logDetailedError(
+        `Ошибка Gemini API (chat ${chatId}, попытка ${attempt + 1}/${MAX_API_RETRIES + 1})`,
+        error,
       );
+      if (attempt >= MAX_API_RETRIES || !isRetryableApiError(error)) throw error;
+      console.error(`Повтор через ${RETRY_DELAY_MS} мс...`);
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
   }
@@ -190,11 +206,12 @@ async function askTranslator(user, requestParts, historyLabel, chatId) {
   const replyText = response.text?.trim();
   if (!replyText) {
     const blockReason = response.promptFeedback?.blockReason;
-    throw new Error(
-      blockReason
-        ? `Gemini не вернул текст ответа (blockReason: ${blockReason})`
-        : "Gemini вернул пустой ответ",
+    const finishReason = response.candidates?.[0]?.finishReason;
+    console.error(
+      `Gemini не вернул текст ответа (chat ${chatId}). blockReason: ${blockReason ?? "нет"}, ` +
+        `finishReason: ${finishReason ?? "нет"}. Полный ответ: ${JSON.stringify(response)}`,
     );
+    throw new Error("Gemini не вернул текст ответа");
   }
 
   user.history.push({ role: "user", parts: [{ text: historyLabel }] });
@@ -206,23 +223,38 @@ async function askTranslator(user, requestParts, historyLabel, chatId) {
   return replyText;
 }
 
-// Скачивает голосовое/аудиосообщение из Telegram и готовит из него части запроса
-// для Gemini (inlineData с base64-содержимым). Возвращается как функция, а не
-// заранее посчитанный результат, — чтобы ошибка скачивания тоже попадала
-// в общий try/catch в respond(), а не падала до него.
+// Скачивает голосовое/аудиосообщение из Telegram (через ctx.telegram.getFileLink —
+// это и есть bot.telegram.getFileLink, доступный на объекте контекста конкретного
+// обновления) и готовит из него части запроса для Gemini: inlineData с base64-
+// содержимым и правильным mimeType (audio/ogg для голосовых, audio/mpeg для
+// аудиофайлов, либо тот mime_type, что прислал сам Telegram). Возвращается как
+// функция, а не заранее посчитанный результат, — чтобы ошибка скачивания тоже
+// попадала в общий try/catch в respond(), а не падала до него. Ошибка на этом шаге
+// логируется отдельно от ошибок самого Gemini API, чтобы в логах Railway сразу было
+// видно, что именно не сработало: скачивание из Telegram или обращение к модели.
 function buildAudioRequest(ctx, media, defaultMimeType, historyLabel) {
   return async () => {
-    const fileUrl = await ctx.telegram.getFileLink(media.file_id);
-    const fileResponse = await fetch(fileUrl);
-    if (!fileResponse.ok) {
-      throw new Error(`Не удалось скачать файл из Telegram: HTTP ${fileResponse.status}`);
+    try {
+      const fileUrl = await ctx.telegram.getFileLink(media.file_id);
+      const fileResponse = await fetch(fileUrl);
+      if (!fileResponse.ok) {
+        throw new Error(
+          `Telegram отдал HTTP ${fileResponse.status} при скачивании файла по ссылке ${fileUrl}`,
+        );
+      }
+      const audioBase64 = Buffer.from(await fileResponse.arrayBuffer()).toString("base64");
+      const mimeType = media.mime_type || defaultMimeType;
+      return {
+        parts: [{ inlineData: { data: audioBase64, mimeType } }],
+        historyLabel,
+      };
+    } catch (error) {
+      logDetailedError(
+        `Не удалось скачать голосовое/аудиосообщение из Telegram (file_id: ${media.file_id})`,
+        error,
+      );
+      throw error;
     }
-    const audioBase64 = Buffer.from(await fileResponse.arrayBuffer()).toString("base64");
-    const mimeType = media.mime_type || defaultMimeType;
-    return {
-      parts: [{ inlineData: { data: audioBase64, mimeType } }],
-      historyLabel,
-    };
   };
 }
 
@@ -250,11 +282,11 @@ async function respond(ctx, buildRequest, { resetHistory = false } = {}) {
       const reply = await askTranslator(user, parts, historyLabel, chatId);
       await ctx.reply(reply);
     } catch (error) {
-      console.error(`Ошибка при обработке запроса (chat ${chatId}):`, error);
+      logDetailedError(`Не удалось обработать запрос (chat ${chatId})`, error);
       try {
         await ctx.reply(FALLBACK_ERROR_MESSAGE);
       } catch (replyError) {
-        console.error(`Не удалось отправить сообщение об ошибке (chat ${chatId}):`, replyError);
+        logDetailedError(`Не удалось отправить сообщение об ошибке (chat ${chatId})`, replyError);
       }
     } finally {
       saveUsers();
@@ -297,7 +329,7 @@ if (bot) {
   // Подстраховка: логирует любые ошибки, которые могли ускользнуть из обработчиков выше
   // (например, сбой в самом Telegraf), чтобы процесс не падал молча.
   bot.catch((err, ctx) => {
-    console.error(`Необработанная ошибка Telegraf (chat ${ctx.chat?.id}):`, err);
+    logDetailedError(`Необработанная ошибка Telegraf (chat ${ctx.chat?.id})`, err);
   });
 
   bot.launch();
