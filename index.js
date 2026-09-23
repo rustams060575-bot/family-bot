@@ -45,7 +45,7 @@ function readFirstEnv(names) {
 const telegramToken = readFirstEnv(TELEGRAM_TOKEN_ENV_VARS);
 const TELEGRAM_BOT_TOKEN = telegramToken?.value;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 // DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
 // на Railway — точка монтирования Volume (Settings → Volumes → Mount Path), например /data.
 const DATA_DIR = process.env.DATA_DIR
