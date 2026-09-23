@@ -64,7 +64,14 @@ function readFirstEnv(names) {
 
 const telegramToken = readFirstEnv(TELEGRAM_TOKEN_ENV_VARS);
 const TELEGRAM_BOT_TOKEN = telegramToken?.value;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+// GROQ_API_KEY обязателен, GROQ_API_KEY_2 опционален. ВАЖНО: у Groq лимиты считаются
+// на уровне организации/аккаунта, а не на ключ — второй ключ даёт реальный запас
+// только если он от ДРУГОГО аккаунта Groq (другой email), а не просто второй ключ
+// того же аккаунта (тот делил бы тот же лимит и ничего бы не добавил).
+const GROQ_API_KEY_ENV_VARS = ["GROQ_API_KEY", "GROQ_API_KEY_2"];
+const GROQ_API_KEYS = GROQ_API_KEY_ENV_VARS.map((name) => process.env[name]).filter(
+  (value) => !!value,
+);
 const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 // DATA_DIR указывает на каталог с постоянным хранилищем: локально — обычная папка ./data,
 // на Railway — точка монтирования Volume (Settings → Volumes → Mount Path), например /data.
@@ -72,6 +79,7 @@ const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
+const STATS_FILE = path.join(DATA_DIR, "stats.json");
 const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
 // Пара (запрос + ответ) — один "ход"; храним последние 15 ходов на чат.
 const MAX_HISTORY_MESSAGES = 30;
@@ -86,7 +94,7 @@ const VOICE_STUB_MESSAGE =
 // Намеренно нигде ниже нет throw за отсутствующие ключи: жёсткий крах на старте означает
 // краш-луп деплоя на Railway (контейнер рестартует снова и снова, а health-check никогда
 // не поднимается). Вместо этого предупреждаем в консоль и позволяем процессу запуститься —
-// каждая отсутствующая интеграция просто не активируется (см. bot = null / groq = null
+// каждая отсутствующая интеграция просто не активируется (см. bot = null / groqClients = []
 // ниже), а health-check сервер в самом конце файла работает в любом случае.
 if (!TELEGRAM_BOT_TOKEN) {
   console.warn(
@@ -96,17 +104,22 @@ if (!TELEGRAM_BOT_TOKEN) {
 } else if (telegramToken.name !== TELEGRAM_TOKEN_ENV_VARS[0]) {
   console.log(`Токен Telegram-бота взят из переменной ${telegramToken.name}.`);
 }
-if (!GROQ_API_KEY) {
+if (GROQ_API_KEYS.length === 0) {
   console.warn(
-    "GROQ_API_KEY не найден. Бот запустится, но на любой запрос будет отвечать сообщением " +
-      "об ошибке, пока переменная не будет задана.",
+    `Ни один ключ Groq не найден (проверены: ${GROQ_API_KEY_ENV_VARS.join(", ")}). ` +
+      "Бот запустится, но на любой запрос будет отвечать сообщением об ошибке, пока хотя бы одна переменная не будет задана.",
   );
 } else {
-  console.log(`Groq API подключён (модель: ${GROQ_MODEL}).`);
+  console.log(
+    `Groq API подключён (модель: ${GROQ_MODEL}, ключей: ${GROQ_API_KEYS.length}).`,
+  );
 }
 
 const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
-const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
+const groqClients = GROQ_API_KEYS.map((apiKey) => new Groq({ apiKey }));
+// Индекс ключа/клиента, который используется прямо сейчас — общий для всех чатов
+// и переживает между запросами, чтобы не долбиться в уже исчерпанный ключ заново.
+let currentGroqKeyIndex = 0;
 const bot = TELEGRAM_BOT_TOKEN ? new Telegraf(TELEGRAM_BOT_TOKEN) : null;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -172,6 +185,41 @@ function getUser(chatId) {
   return users[chatId];
 }
 
+// Простая статистика использования — сколько раз бот успешно ответил, по дням.
+// Не хранит содержимое сообщений, только счётчики; количество уникальных чатов
+// берётся напрямую из users при запросе /stats, отдельно не дублируется.
+function loadStats() {
+  if (!fs.existsSync(STATS_FILE)) return { total: 0, byDate: {} };
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
+    return {
+      total: typeof raw?.total === "number" ? raw.total : 0,
+      byDate: raw?.byDate && typeof raw.byDate === "object" ? raw.byDate : {},
+    };
+  } catch (error) {
+    console.error(`Не удалось прочитать ${STATS_FILE}, начинаем со счётчиков с нуля:`, error);
+    return { total: 0, byDate: {} };
+  }
+}
+
+const stats = loadStats();
+
+function saveStats() {
+  const tmpFile = `${STATS_FILE}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(stats, null, 2), "utf-8");
+  fs.renameSync(tmpFile, STATS_FILE);
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function recordUsage() {
+  stats.total += 1;
+  const key = todayKey();
+  stats.byDate[key] = (stats.byDate[key] ?? 0) + 1;
+}
+
 // Последовательная очередь на чат: не даёт двум быстрым сообщениям одного и того же
 // пользователя перемешать историю диалога, пока оба ответа ждут Groq API.
 const chatQueues = new Map();
@@ -205,13 +253,53 @@ function logDetailedError(label, error) {
   }
 }
 
+function isRetryableGroqError(error) {
+  const status = error?.status;
+  return status === 429 || (typeof status === "number" && status >= 500);
+}
+
+// Пробует каждый настроенный ключ Groq по одному разу подряд, начиная с
+// currentGroqKeyIndex, без задержки между ключами (при 429/5xx). currentGroqKeyIndex
+// запоминается между вызовами, чтобы следующий запрос сразу начинал с рабочего ключа.
+// Не-retryable ошибка (например, неверный ключ или неверная модель) бросается сразу —
+// другой ключ её не исправит. Если отказали все настроенные ключи — бросает последнюю
+// ошибку, дальше её подхватывает уже общий catch в respond() с вежливым ответом.
+async function tryAllGroqKeysOnce(params, chatId) {
+  const totalKeys = groqClients.length;
+  let lastError;
+
+  for (let keyAttempt = 0; keyAttempt < totalKeys; keyAttempt++) {
+    const keyIndex = currentGroqKeyIndex;
+    const client = groqClients[keyIndex];
+
+    try {
+      return await client.chat.completions.create(params);
+    } catch (error) {
+      lastError = error;
+      logDetailedError(`Ошибка Groq API (chat ${chatId}, ключ #${keyIndex + 1}/${totalKeys})`, error);
+
+      if (!isRetryableGroqError(error)) throw error;
+
+      currentGroqKeyIndex = (keyIndex + 1) % totalKeys;
+      if (keyAttempt < totalKeys - 1) {
+        console.warn(
+          `Ключ Groq #${keyIndex + 1}/${totalKeys} недоступен (429/5xx), переключаюсь на ключ ` +
+            `#${currentGroqKeyIndex + 1}/${totalKeys}.`,
+        );
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 // Отправляет запрос модели вместе с историей чата в формате Groq/OpenAI (роли
 // "system"/"user"/"assistant"). История пополняется только при успешном непустом
 // ответе — если модель ничего не вернула или API упал, в файл ничего не пишется
 // и предыдущая история не портится.
 async function askTranslator(user, userText, chatId) {
-  if (!groq) {
-    throw new Error("GROQ_API_KEY не задан — интеграция с Groq недоступна.");
+  if (groqClients.length === 0) {
+    throw new Error("Не задан ни один ключ Groq (GROQ_API_KEY / _2) — интеграция недоступна.");
   }
 
   const messages = [
@@ -220,17 +308,10 @@ async function askTranslator(user, userText, chatId) {
     { role: "user", content: userText },
   ];
 
-  let response;
-  try {
-    response = await groq.chat.completions.create({
-      model: GROQ_MODEL,
-      messages,
-      max_completion_tokens: 1024,
-    });
-  } catch (error) {
-    logDetailedError(`Ошибка Groq API (chat ${chatId})`, error);
-    throw error;
-  }
+  const response = await tryAllGroqKeysOnce(
+    { model: GROQ_MODEL, messages, max_completion_tokens: 1024 },
+    chatId,
+  );
 
   const replyText = response.choices?.[0]?.message?.content?.trim();
   if (!replyText) {
@@ -247,6 +328,8 @@ async function askTranslator(user, userText, chatId) {
   if (user.history.length > MAX_HISTORY_MESSAGES) {
     user.history = user.history.slice(-MAX_HISTORY_MESSAGES);
   }
+
+  recordUsage();
 
   return replyText;
 }
@@ -280,6 +363,7 @@ async function respond(ctx, userText, { resetHistory = false } = {}) {
       }
     } finally {
       saveUsers();
+      saveStats();
     }
   });
 }
@@ -299,6 +383,21 @@ if (bot) {
       saveUsers();
       await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с переводом?");
     });
+  });
+
+  // Простой отчёт по использованию — сколько сообщений обработано всего, сегодня
+  // и сколько разных чатов вообще писали боту. Доступен всем — тут только счётчики,
+  // без содержимого переписки.
+  bot.command("stats", async (ctx) => {
+    const key = todayKey();
+    const todayCount = stats.byDate[key] ?? 0;
+    const totalChats = Object.keys(users).length;
+    await ctx.reply(
+      "📊 Статистика бота\n" +
+        `Всего сообщений обработано: ${stats.total}\n` +
+        `Сегодня (${key}): ${todayCount}\n` +
+        `Уникальных чатов: ${totalChats}`,
+    );
   });
 
   bot.on("text", (ctx) => respond(ctx, ctx.message.text));
@@ -353,7 +452,9 @@ http
   .createServer((_req, res) => {
     const problems = [];
     if (!bot) problems.push(`Telegram-токен не найден (${TELEGRAM_TOKEN_ENV_VARS.join(", ")})`);
-    if (!groq) problems.push("GROQ_API_KEY не найден");
+    if (groqClients.length === 0) {
+      problems.push(`ни один ключ Groq не найден (${GROQ_API_KEY_ENV_VARS.join(", ")})`);
+    }
 
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end(problems.length ? `family-bot: ${problems.join("; ")}` : "family-bot ishlayapti");
