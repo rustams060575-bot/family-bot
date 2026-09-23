@@ -8,6 +8,17 @@ import Groq from "groq-sdk";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Последний рубеж защиты: по умолчанию необработанный rejection/exception убивает весь
+// процесс Node.js. Мы уже нашли один конкретный случай, где так и происходило (409 из
+// bot.launch(), см. комментарий возле launchBotWithRetry), но лучше не полагаться на то,
+// что мы предусмотрели вообще все такие места, — логируем и продолжаем работу, а не падаем.
+process.on("unhandledRejection", (reason) => {
+  logDetailedError("Необработанный отказ промиса (процесс продолжает работать)", reason);
+});
+process.on("uncaughtException", (error) => {
+  logDetailedError("Необработанное исключение (процесс продолжает работать)", error);
+});
+
 // Диагностика для отладки проблем с переменными окружения на хостинге (например,
 // когда переменная задана в панели, но приложение её не видит — часто из-за невидимого
 // пробела в имени переменной). Не печатает значения, только факт наличия ключей и их
@@ -303,8 +314,34 @@ if (bot) {
     logDetailedError(`Необработанная ошибка Telegraf (chat ${ctx.chat?.id})`, err);
   });
 
-  bot.launch();
-  console.log("Family bot ishga tushdi.");
+  // bot.launch() кидает исключение (например, 409 Conflict — другой инстанс уже
+  // поллит этот же токен) прямо в свой промис, а bot.catch() выше на это НЕ подписан
+  // (он ловит ошибки только из обработчиков обновлений, а не из самого цикла поллинга).
+  // Без этой обёртки такая ошибка становится необработанным rejection'ом и убивает весь
+  // процесс Node.js целиком — именно это и вызывало краш-луп при пересборках деплоя на
+  // Railway. 409 почти всегда временный (старый инстанс ещё не отпустил соединение при
+  // рестарте/редеплое) — поэтому пробуем несколько раз с паузой, а не падаем сразу.
+  async function launchBotWithRetry(maxAttempts = 5, delayMs = 5000) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await bot.launch();
+        console.log("Family bot ishga tushdi.");
+        return;
+      } catch (error) {
+        logDetailedError(`Не удалось запустить Telegram-поллинг (попытка ${attempt}/${maxAttempts})`, error);
+        if (attempt === maxAttempts) {
+          console.error(
+            "Telegram-бот не запущен после нескольких попыток. Процесс продолжает работать " +
+              "(health-check доступен), но сообщения обрабатываться не будут, пока проблема не исчезнет.",
+          );
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  launchBotWithRetry();
 }
 
 // Простой health-check эндпоинт — нужен облачным платформам (Railway, Render и т.п.),
