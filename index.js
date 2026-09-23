@@ -8,6 +8,26 @@ import Groq from "groq-sdk";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Диагностика для отладки проблем с переменными окружения на хостинге (например,
+// когда переменная задана в панели, но приложение её не видит — часто из-за невидимого
+// пробела в имени переменной). Не печатает значения, только факт наличия ключей и их
+// общее число — безопасно смотреть в публичных логах.
+console.log(
+  `[env-диагностика] всего переменных окружения в process.env: ${Object.keys(process.env).length}; ` +
+    `есть ключ "GROQ_API_KEY": ${"GROQ_API_KEY" in process.env}; ` +
+    `есть ключ "TELEGRAM_BOT_TOKEN": ${"TELEGRAM_BOT_TOKEN" in process.env}; ` +
+    `есть ключ "PORT": ${"PORT" in process.env}.`,
+);
+const suspiciousEnvKeys = Object.keys(process.env).filter(
+  (key) => key.trim() !== key || /GROQ|TELEGRAM|BOT_TOKEN/i.test(key),
+);
+if (suspiciousEnvKeys.length > 0) {
+  console.log(
+    `[env-диагностика] релевантные/подозрительные имена ключей (в кавычках, чтобы был виден лишний пробел): ` +
+      suspiciousEnvKeys.map((key) => JSON.stringify(key)).join(", "),
+  );
+}
+
 // Имена переменных окружения, в которых может лежать токен Telegram-бота — проверяются
 // по порядку, побеждает первая найденная непустая. Разные хостинги/шаблоны деплоя иногда
 // называют её по-разному, так что поддерживаем оба распространённых варианта.
