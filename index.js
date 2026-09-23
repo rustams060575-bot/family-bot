@@ -19,15 +19,15 @@ console.log(
     `есть ключ "PORT": ${"PORT" in process.env}; ` +
     `есть ключ "DEBUG_PING": ${"DEBUG_PING" in process.env}.`,
 );
-const suspiciousEnvKeys = Object.keys(process.env).filter(
-  (key) => key.trim() !== key || /GROQ|TELEGRAM|BOT_TOKEN/i.test(key),
+// Полный список имён переменных (без значений) — чтобы видеть 100% правду о том, что
+// реально долетает до контейнера, а не гадать по регулярке, похоже ли имя на нужное.
+console.log(
+  `[env-диагностика] все имена ключей process.env (в кавычках, чтобы был виден лишний пробел): ` +
+    Object.keys(process.env)
+      .sort()
+      .map((key) => JSON.stringify(key))
+      .join(", "),
 );
-if (suspiciousEnvKeys.length > 0) {
-  console.log(
-    `[env-диагностика] релевантные/подозрительные имена ключей (в кавычках, чтобы был виден лишний пробел): ` +
-      suspiciousEnvKeys.map((key) => JSON.stringify(key)).join(", "),
-  );
-}
 
 // Имена переменных окружения, в которых может лежать токен Telegram-бота — проверяются
 // по порядку, побеждает первая найденная непустая. Разные хостинги/шаблоны деплоя иногда
