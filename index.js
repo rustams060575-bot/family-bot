@@ -28,6 +28,15 @@ console.log(
       .map((key) => JSON.stringify(key))
       .join(", "),
 );
+// Эти значения не секретны (Railway сам их проставляет: хеш коммита, ветка, сообщение
+// коммита) — печатаем открыто, чтобы понять, какой именно код реально запущен, если
+// поведение не совпадает с тем, что ожидается от последнего пуша в GitHub.
+console.log(
+  `[env-диагностика] Railway git: sha=${process.env.RAILWAY_GIT_COMMIT_SHA ?? "нет"}, ` +
+    `branch=${process.env.RAILWAY_GIT_BRANCH ?? "нет"}, ` +
+    `message=${JSON.stringify(process.env.RAILWAY_GIT_COMMIT_MESSAGE ?? null)}, ` +
+    `deploymentId=${process.env.RAILWAY_DEPLOYMENT_ID ?? "нет"}.`,
+);
 
 // Имена переменных окружения, в которых может лежать токен Telegram-бота — проверяются
 // по порядку, побеждает первая найденная непустая. Разные хостинги/шаблоны деплоя иногда
