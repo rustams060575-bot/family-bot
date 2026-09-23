@@ -16,7 +16,8 @@ console.log(
   `[env-диагностика] всего переменных окружения в process.env: ${Object.keys(process.env).length}; ` +
     `есть ключ "GROQ_API_KEY": ${"GROQ_API_KEY" in process.env}; ` +
     `есть ключ "TELEGRAM_BOT_TOKEN": ${"TELEGRAM_BOT_TOKEN" in process.env}; ` +
-    `есть ключ "PORT": ${"PORT" in process.env}.`,
+    `есть ключ "PORT": ${"PORT" in process.env}; ` +
+    `есть ключ "DEBUG_PING": ${"DEBUG_PING" in process.env}.`,
 );
 const suspiciousEnvKeys = Object.keys(process.env).filter(
   (key) => key.trim() !== key || /GROQ|TELEGRAM|BOT_TOKEN/i.test(key),
