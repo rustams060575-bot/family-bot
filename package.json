@@ -1,7 +1,7 @@
 {
   "name": "family-bot",
   "version": "1.0.0",
-  "description": "Telegram-бот «Профессор» — мудрый семейный собеседник на литературном узбекском языке (кириллица)",
+  "description": "Telegram-бот — переводчик и языковой помощник русский ↔ узбекский",
   "type": "module",
   "main": "index.js",
   "engines": {
@@ -12,8 +12,8 @@
     "dev": "node --watch index.js"
   },
   "dependencies": {
-    "@google/genai": "^2.24.0",
     "dotenv": "^18.0.2",
+    "groq-sdk": "^1.6.0",
     "telegraf": "^4.16.3"
   }
 }
