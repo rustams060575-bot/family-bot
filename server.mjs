@@ -1,7 +1,7 @@
 import http from "http";
 import "dotenv/config";
 import next from "next";
-import { startBot } from "./bot/telegram-bot.mjs";
+import { getBotIdentity, startBot, webAppUrl } from "./bot/telegram-bot.mjs";
 import { GROQ_API_KEY_ENV_VARS, GROQ_MODEL, groqKeyCount, logDetailedError } from "./lib/groq.mjs";
 import { flushAccounts } from "./lib/store.mjs";
 import { telegramBotToken } from "./lib/telegram-auth.mjs";
@@ -36,6 +36,7 @@ function configurationProblems() {
   const problems = [];
   if (!telegramBotToken()) problems.push("Telegram-токен не найден (TELEGRAM_BOT_TOKEN, BOT_TOKEN)");
   if (groqKeyCount() === 0) problems.push(`ни один ключ Groq не найден (${GROQ_API_KEY_ENV_VARS.join(", ")})`);
+  if (!webAppUrl()) problems.push("нет адреса Mini App (WEBAPP_URL или публичный домен Railway) — кнопка запуска не отправляется");
   if (!process.env.OPENAI_API_KEY) problems.push("OPENAI_API_KEY не задан — озвучка через голос браузера");
   if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) problems.push("нет ключа Vision — разбор рисунков выключен");
   return problems;
@@ -54,7 +55,13 @@ http
     if (req.url === "/healthz") {
       const problems = configurationProblems();
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end(problems.length ? `ata-academy: ${problems.join("; ")}` : "ata-academy ishlayapti");
+      // Не секреты: публичный @username бота и адрес приложения — для быстрой проверки,
+      // что токен принадлежит нужному боту (Ата AI), а кнопка ведёт куда нужно.
+      const info = [
+        `бот: ${getBotIdentity() ?? (telegramBotToken() ? "запускается или токен не принят Telegram" : "нет токена")}`,
+        `Mini App: ${webAppUrl() ?? "не задан"}`,
+      ];
+      res.end([problems.length ? `ata-academy: ${problems.join("; ")}` : "ata-academy ishlayapti", ...info].join("\n"));
       return;
     }
     handle(req, res);

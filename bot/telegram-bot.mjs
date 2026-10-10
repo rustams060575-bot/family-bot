@@ -4,16 +4,27 @@ import { fileURLToPath } from "url";
 import { Telegraf, Markup } from "telegraf";
 import { message } from "telegraf/filters";
 import { groqChat, logDetailedError } from "../lib/groq.mjs";
-import { DATA_DIR, decideApplication, getAccount, grantPremium, isAdmin, upsertAccount } from "../lib/store.mjs";
+import {
+  DATA_DIR,
+  accessStatus,
+  decideApplication,
+  displayName,
+  getAccount,
+  grantPremium,
+  isAdmin,
+  isVip,
+  upsertAccount,
+} from "../lib/store.mjs";
+import { personaLine } from "../lib/prompts.mjs";
 import { applicationText, notifyDecision } from "../lib/notify.mjs";
 import { telegramBotToken } from "../lib/telegram-auth.mjs";
 import { startReminders } from "./reminders.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Telegram-бот ATA Academy: точка входа в Mini App (кнопка меню и /app), оплата
-// Premium в Telegram Stars, ежедневные напоминания и — как и раньше — переводчик
-// русский ↔ узбекский прямо в чате для тех, кто не открывает приложение.
+// Telegram-бот ATA Academy («Ата AI»): точка входа в Mini App (кнопка на /start, кнопка
+// меню и /app), заявки в закрытую школу, оплата Premium в Telegram Stars, ежедневные
+// напоминания и ИИ-ассистент в чате для участников школы.
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const STATS_FILE = path.join(DATA_DIR, "stats.json");
 const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
@@ -26,13 +37,24 @@ const VOICE_STUB_MESSAGE =
   "В чате я принимаю только текст. Голосовые занятия с репетитором — в приложении ATA Academy: кнопка «Открыть» ниже.";
 
 const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
+// Версия личности бота. Истории, накопленные под другой версией (например, старым
+// «узбекским переводчиком»), сбрасываются — иначе модель продолжает их стиль.
+const PERSONA_VERSION = "ata-ai-1";
 
-// URL Mini App: явно через WEBAPP_URL, иначе публичный домен Railway. Telegram
-// принимает только https-адреса.
+// URL Mini App: явно через WEBAPP_URL, иначе публичный домен Railway (появляется после
+// Settings → Networking → Generate Domain). Telegram принимает в web_app только https —
+// невалидный адрес ломал бы всё сообщение с кнопкой, поэтому адрес нормализуем.
 export function webAppUrl() {
-  if (process.env.WEBAPP_URL) return process.env.WEBAPP_URL;
-  if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-  return null;
+  const raw = (process.env.WEBAPP_URL || process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  if (!raw) return null;
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  const url = withScheme.replace(/^http:\/\//i, "https://").replace(/\/+$/, "");
+  try {
+    return new URL(url).protocol === "https:" ? url : null;
+  } catch {
+    console.warn(`WEBAPP_URL/RAILWAY_PUBLIC_DOMAIN не похож на адрес: ${JSON.stringify(raw)}`);
+    return null;
+  }
 }
 
 function isNonEmptyText(value) {
@@ -60,7 +82,9 @@ function normalizeUser(raw) {
     }
   }
 
-  return { history };
+  // Нет версии или другая версия личности — история от прежнего бота, начинаем заново.
+  if (raw?.personaVersion !== PERSONA_VERSION) return { history: [], personaVersion: PERSONA_VERSION };
+  return { history, personaVersion: PERSONA_VERSION };
 }
 
 function loadUsers() {
@@ -91,7 +115,7 @@ function saveUsers() {
 
 function getUser(chatId) {
   if (!users[chatId]) {
-    users[chatId] = { history: [] };
+    users[chatId] = { history: [], personaVersion: PERSONA_VERSION };
   }
   return users[chatId];
 }
@@ -147,9 +171,14 @@ function enqueue(chatId, task) {
 // Отправляет запрос модели вместе с историей чата. История пополняется только при
 // успешном непустом ответе — если модель ничего не вернула или API упал, в файл ничего
 // не пишется и предыдущая история не портится.
-async function askTranslator(user, userText, chatId) {
+async function askAssistant(user, userText, chatId, account) {
+  // Имя из Telegram и, для VIP, подбадривающий тон — как в Mini App.
+  const persona = personaLine({ name: displayName(account), vip: isVip(account) });
+  const system = persona ? `${systemInstruction}
+
+${persona}` : systemInstruction;
   const replyText = await groqChat(
-    [{ role: "system", content: systemInstruction }, ...user.history, { role: "user", content: userText }],
+    [{ role: "system", content: system }, ...user.history, { role: "user", content: userText }],
     `chat ${chatId}`,
   );
 
@@ -162,6 +191,27 @@ async function askTranslator(user, userText, chatId) {
   recordUsage();
 
   return replyText;
+}
+
+const APP_NOT_PUBLISHED = "Приложение ATA Academy ещё не опубликовано — администратор скоро это исправит.";
+
+function startText(account) {
+  const name = displayName(account);
+  const hello = `${name ? `${name}, з` : "З"}дравствуйте! Я — Ата AI, ассистент ATA Academy.`;
+  const body =
+    accessStatus(account) === "approved"
+      ? "Испанский, английский, рисование и переводчик — в приложении: нажмите «Открыть ATA Academy». " +
+        "А здесь можно просто задать вопрос или прислать фразу для перевода."
+      : "ATA Academy — закрытая школа. Откройте приложение, выберите роль и трек — " +
+        "заявка уйдёт администратору, ответ придёт сюда.";
+  return `${hello}\n\n${body}${webAppUrl() ? "" : `\n\n${APP_NOT_PUBLISHED}`}`;
+}
+
+function joinText(account) {
+  const status = accessStatus(account);
+  if (status === "pending") return "Ваша заявка в ATA Academy на рассмотрении — ответ придёт сюда, в этот чат.";
+  if (status === "rejected") return "Заявка пока не одобрена. Повторно её можно отправить в приложении через сутки.";
+  return "ATA Academy — закрытая школа. Чтобы общаться с Ата AI, откройте приложение и отправьте заявку.";
 }
 
 function openAppKeyboard() {
@@ -187,7 +237,7 @@ async function respond(ctx, userText, { resetHistory = false } = {}) {
     }
 
     try {
-      const reply = await askTranslator(user, userText, chatId);
+      const reply = await askAssistant(user, userText, chatId, getAccount(ctx.from.id));
       await ctx.reply(reply);
     } catch (error) {
       logDetailedError(`Не удалось обработать запрос (chat ${chatId})`, error);
@@ -214,21 +264,16 @@ function registerHandlers(bot) {
     return next();
   });
 
+  // /start — всегда с кнопкой запуска Mini App (web_app). Без URL кнопку отправить
+  // нельзя: тогда честно говорим об этом, а причина видна в логе запуска.
   bot.start(async (ctx) => {
     const chatId = String(ctx.chat.id);
-    users[chatId] = { history: [] };
+    users[chatId] = { history: [], personaVersion: PERSONA_VERSION };
     saveUsers();
-    await ctx.reply(
-      "Добро пожаловать в ATA Academy.\n\n" +
-        "Испанский, английский, рисование и переводчик — в приложении. " +
-        "А здесь, в чате, можно просто написать фразу — переведу между русским и узбекским.",
-      openAppKeyboard(),
-    );
+    await ctx.reply(startText(getAccount(ctx.from.id)), openAppKeyboard());
   });
 
-  bot.command("app", (ctx) =>
-    ctx.reply(webAppUrl() ? "ATA Academy:" : "Приложение ещё не опубликовано.", openAppKeyboard()),
-  );
+  bot.command("app", (ctx) => ctx.reply(webAppUrl() ? "ATA Academy:" : APP_NOT_PUBLISHED, openAppKeyboard()));
 
   // Telegram ID нужен для VIP-списка (VIP_TELEGRAM_IDS) — его не видно в интерфейсе Telegram.
   bot.command("myid", (ctx) =>
@@ -239,7 +284,7 @@ Username: @${ctx.from.username}` : ""}`),
   bot.command("reset", async (ctx) => {
     const chatId = String(ctx.chat.id);
     await enqueue(chatId, async () => {
-      users[chatId] = { history: [] };
+      users[chatId] = { history: [], personaVersion: PERSONA_VERSION };
       saveUsers();
       await ctx.reply("Память очищена, начинаем с чистого листа. Чем помочь с переводом?");
     });
@@ -312,7 +357,13 @@ Username: @${ctx.from.username}` : ""}`),
     }
   });
 
-  bot.on(message("text"), (ctx) => respond(ctx, ctx.message.text));
+  // Закрытая школа: ИИ в чате — для участников (одобренная заявка, VIP, админы).
+  // Остальным — приглашение подать заявку в приложении, без обращения к ИИ.
+  bot.on(message("text"), (ctx) => {
+    const account = getAccount(ctx.from.id);
+    if (accessStatus(account) !== "approved") return ctx.reply(joinText(account), openAppKeyboard());
+    return respond(ctx, ctx.message.text);
+  });
 
   // Голосовые и аудиосообщения в чате не обрабатываются — заглушка отвечает сразу,
   // без обращения к API и без очереди/истории.
@@ -377,14 +428,31 @@ async function launchBotWithRetry(bot, maxAttempts = 5, delayMs = 5000) {
   return false;
 }
 
+let botIdentity = null;
+
+export function getBotIdentity() {
+  return botIdentity;
+}
+
+// Бот со всеми обработчиками, но без запуска поллинга (удобно и для проверок).
+export function createBot(token) {
+  const bot = new Telegraf(token);
+  registerHandlers(bot);
+  return bot;
+}
+
 export function startBot() {
   const token = telegramBotToken();
   if (!token) return null;
 
-  const bot = new Telegraf(token);
-  registerHandlers(bot);
+  const bot = createBot(token);
   launchBotWithRetry(bot).then((launched) => {
     if (!launched) return;
+    // Какой бот реально подключён этим токеном и куда ведёт кнопка — первое, что
+    // стоит проверить в логах Railway, если бот ведёт себя «по-старому».
+    botIdentity = bot.botInfo ? `@${bot.botInfo.username} (id ${bot.botInfo.id}, «${bot.botInfo.first_name}»)` : null;
+    console.log(`Telegram-токен подключён к боту ${botIdentity ?? "(неизвестно)"}.`);
+    console.log(`Mini App URL для кнопок: ${webAppUrl() ?? "НЕ ЗАДАН — задайте WEBAPP_URL или Generate Domain в Railway"}.`);
     configureMenuButton(bot);
     startReminders(bot, openAppKeyboard);
   });
