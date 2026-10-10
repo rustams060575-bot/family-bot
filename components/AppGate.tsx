@@ -1,0 +1,46 @@
+"use client";
+
+import { motion } from "framer-motion";
+import { useApp } from "@/components/AppProvider";
+import Onboarding from "@/components/Onboarding";
+import { press } from "@/lib/motion";
+
+// Общий вход каждого экрана: загрузка → ошибка → онбординг → содержимое.
+export default function AppGate({ children }: { children: React.ReactNode }) {
+  const { status, account, refresh } = useApp();
+
+  if (status === "loading") {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <motion.p
+          className="font-serif text-h3 font-light italic text-mist"
+          animate={{ opacity: [0.35, 0.9, 0.35] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+        >
+          ATA Academy
+        </motion.p>
+      </div>
+    );
+  }
+
+  if (status === "error" || !account) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center text-center">
+        <p className="font-serif text-h2 font-light">Нет связи</p>
+        <p className="mt-4 max-w-[18rem] text-body text-mist">
+          Откройте ATA Academy из Telegram или проверьте интернет.
+        </p>
+        <motion.button
+          {...press}
+          onClick={refresh}
+          className="mt-8 rounded-2xl bg-tint/[0.06] px-6 py-4 font-sans text-body text-paper"
+        >
+          Повторить
+        </motion.button>
+      </div>
+    );
+  }
+
+  if (!account.role) return <Onboarding />;
+  return <>{children}</>;
+}

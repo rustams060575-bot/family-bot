@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Палитра ATA Academy: две темы на одних токенах — Deep Dark Glass (OLED #0B0F17)
+   и Clean Light Glass. Один акцент — шампань, дозированно (активная вкладка,
+   Premium, звёзды похвалы). Холодное свечение фона — атмосфера, а не второй акцент.
+   Тема задаётся атрибутом data-theme на <html> (см. lib/client/theme.ts). */
+:root,
+:root[data-theme="dark"] {
+  --ink: 11 15 23; /* #0B0F17 — фон */
+  --ink-raised: 17 22 34; /* #111622 */
+  --tint: 255 255 255; /* подкраска поверхностей */
+  --paper: 244 244 241; /* #F4F4F1 — основной текст */
+  --mist: 167 175 188; /* #A7AFBC — вторичный текст, 8.6:1 на фоне */
+  --dim: 122 130 144; /* #7A8290 — метки, 4.9:1 на фоне */
+  --champagne: 217 194 154; /* #D9C29A */
+  --danger: 224 138 128; /* #E08A80 — запись, ошибки; приглушённый */
+  --atmosphere: 58 74 102; /* #3A4A66 — только для фонового свечения */
+  --vignette: 0 0 0;
+  --vignette-alpha: 0.6;
+  --glass-from: rgb(255 255 255 / 0.055);
+  --glass-to: rgb(255 255 255 / 0.02);
+  --glass-edge: rgb(255 255 255 / 0.18);
+  --glass-edge-soft: rgb(255 255 255 / 0.03);
+  --glass-shadow: 0 24px 48px -24px rgb(0 0 0 / 0.6);
+  --glass-inner: rgb(255 255 255 / 0.04);
+  --grain-opacity: 0.05;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --ink: 246 245 241; /* #F6F5F1 — тёплая бумага */
+  --ink-raised: 255 255 255;
+  --tint: 11 15 23;
+  --paper: 17 20 27; /* #11141B */
+  --mist: 84 91 104; /* #545B68 — 6.4:1 на фоне */
+  --dim: 106 113 126; /* #6A717E — 4.7:1 на фоне */
+  --champagne: 138 106 58; /* #8A6A3A — тот же акцент, затемнён до 4.9:1 для текста */
+  --danger: 178 72 60; /* #B2483C */
+  --atmosphere: 196 208 228;
+  --vignette: 120 110 90;
+  --vignette-alpha: 0.12;
+  --glass-from: rgb(255 255 255 / 0.78);
+  --glass-to: rgb(255 255 255 / 0.52);
+  --glass-edge: rgb(11 15 23 / 0.12);
+  --glass-edge-soft: rgb(11 15 23 / 0.04);
+  --glass-shadow: 0 24px 48px -28px rgb(40 36 28 / 0.28);
+  --glass-inner: rgb(255 255 255 / 0.9);
+  --grain-opacity: 0.035;
+  color-scheme: light;
+}
+
+:root {
+  --font-serif: "Cormorant Garamond";
+  --font-sans: "Inter Tight";
+
+  --safe-top: max(env(safe-area-inset-top), var(--tg-safe-area-inset-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom), var(--tg-safe-area-inset-bottom, 0px));
+  --content-safe-top: var(--tg-content-safe-area-inset-top, 0px);
+}
+
+/* Крупный текст для старшего возраста и детей: вся шкала в rem, поэтому
+   увеличивается вся типографика и отступы целиком, без поломки сетки. */
+:root[data-text="large"] {
+  font-size: 118.75%;
+}
+
+html,
+body {
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* Смена темы — мягкий кросс-фейд цветов, без вспышки. Класс ставится только
+   на время переключения, чтобы обычные hover/press не тормозили. */
+:root.theme-transition,
+:root.theme-transition *,
+:root.theme-transition *::before {
+  transition:
+    background-color 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+body {
+  min-height: 100dvh;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Сдержанное свечение сверху и мягкая виньетка — без кислотных пятен. */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgb(var(--atmosphere) / 0.32), transparent 60%),
+    radial-gradient(80% 40% at 100% 0%, rgb(var(--champagne) / 0.06), transparent 70%),
+    radial-gradient(140% 100% at 50% 120%, rgb(var(--vignette) / var(--vignette-alpha)), transparent 60%);
+}
+
+/* Мягкое плёночное зерно поверх всего — едва заметное, статичное. */
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+@layer components {
+  /* Стекло: полупрозрачная заливка, blur-2xl, градиентная обводка 1 px через маску. */
+  .glass {
+    position: relative;
+    border-radius: 1.5rem;
+    background: linear-gradient(180deg, var(--glass-from), var(--glass-to));
+    -webkit-backdrop-filter: blur(40px) saturate(140%);
+    backdrop-filter: blur(40px) saturate(140%);
+    box-shadow:
+      0 1px 0 0 var(--glass-inner) inset,
+      var(--glass-shadow);
+  }
+  .glass::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(160deg, var(--glass-edge), var(--glass-edge-soft) 40%, var(--glass-edge));
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .glass-accent::before {
+    background: linear-gradient(160deg, rgb(var(--champagne) / 0.55), rgb(var(--champagne) / 0.05) 45%, var(--glass-edge));
+  }
+
+  .label {
+    @apply font-sans text-label font-medium uppercase text-dim;
+  }
+
+  .hairline {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgb(var(--tint) / 0.1), transparent);
+  }
+
+  .field {
+    @apply w-full rounded-2xl bg-tint/[0.04] px-4 py-4 text-body text-paper placeholder:text-dim;
+    @apply outline-none ring-1 ring-inset ring-tint/10 transition-shadow duration-300 ease-out-expo;
+    @apply focus:ring-champagne/40;
+  }
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: calc(var(--safe-top) + var(--content-safe-top));
+  }
+  .pb-safe {
+    padding-bottom: var(--safe-bottom);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

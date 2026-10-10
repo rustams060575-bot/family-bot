@@ -1,19 +1,37 @@
 {
-  "name": "family-bot",
+  "name": "ata-academy",
   "version": "1.0.0",
-  "description": "Telegram-бот — переводчик и языковой помощник русский ↔ узбекский",
+  "description": "ATA Academy — Telegram Mini App (испанский, английский, рисование, переводчик) и бот",
   "type": "module",
-  "main": "index.js",
+  "main": "server.mjs",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node server.mjs",
+    "build": "next build",
+    "start": "cross-env NODE_ENV=production node server.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/inter-tight": "^5.3.0",
+    "@twa-dev/sdk": "^8.0.2",
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.6.1",
+    "cross-env": "^10.1.0",
     "dotenv": "^18.0.2",
+    "framer-motion": "^11.18.2",
     "groq-sdk": "^1.6.0",
-    "telegraf": "^4.16.3"
+    "next": "^14.2.35",
+    "openai": "^4.104.0",
+    "postcss": "^8.5.29",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.19",
+    "telegraf": "^4.16.3",
+    "typescript": "^5.9.3"
   }
 }
