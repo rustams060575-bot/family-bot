@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticate, badRequest, serverError, unauthorized } from "@/lib/server/session";
+import { authenticate, badRequest, serverError, requireAccess, unauthorized } from "@/lib/server/session";
 import { groqTranscribe, logDetailedError } from "@/lib/groq.mjs";
 
 export const runtime = "nodejs";
@@ -23,6 +23,8 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
+  const denied = requireAccess(account);
+  if (denied) return denied;
 
   const form = await request.formData().catch(() => null);
   const audio = form?.get("audio");

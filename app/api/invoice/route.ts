@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticate, serverError, unauthorized } from "@/lib/server/session";
+import { authenticate, serverError, requireAccess, unauthorized } from "@/lib/server/session";
 import { telegramBotToken } from "@/lib/telegram-auth.mjs";
 import { premiumOffer } from "@/lib/server/premium";
 import { logDetailedError } from "@/lib/groq.mjs";
@@ -13,6 +13,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
+  const denied = requireAccess(account);
+  if (denied) return denied;
 
   const offer = premiumOffer();
   const token = telegramBotToken();

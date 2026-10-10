@@ -106,6 +106,24 @@ function Dashboard() {
         </Link>
       </motion.div>
 
+      {account.admin && (
+        <motion.div variants={rise} className="mt-2">
+          <Link href="/admin" onClick={() => haptic("light")}>
+            <motion.div {...press} className="glass glass-accent flex min-h-[4.5rem] items-center justify-between p-6">
+              <div>
+                <p className="label">{account.superAdmin ? "Супер-админ" : "Администратор"} · заявки</p>
+                <p className="mt-2 font-serif text-h3 font-light">
+                  Вся <em className="italic text-champagne">академия</em>
+                </p>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" className="text-mist" aria-hidden>
+                <path d="M7.5 4.5L13 10l-5.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </motion.div>
+          </Link>
+        </motion.div>
+      )}
+
       {account.plan === "free" && (
         <motion.div variants={rise} className="mt-8">
           <SubscriptionCard variant="compact" />

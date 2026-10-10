@@ -187,6 +187,11 @@ export default function AppProvider({ children }: { children: React.ReactNode })
 
   const handleError = useCallback(
     (error: unknown) => {
+      // Доступ к школе изменился (например, отозван) — подтягиваем статус, AppGate покажет экран заявки.
+      if (error instanceof ApiError && error.status === 403 && error.data.error === "access") {
+        refresh();
+        return error.message;
+      }
       if (error instanceof ApiError && error.isLimit) {
         openPaywall(error.message);
         refresh();

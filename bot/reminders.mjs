@@ -1,4 +1,4 @@
-import { displayName, listAccounts, localDateKey, markReminderSent } from "../lib/store.mjs";
+import { displayName, hasAccess, listAccounts, localDateKey, markReminderSent } from "../lib/store.mjs";
 import { logDetailedError } from "../lib/groq.mjs";
 
 // Ежедневный контроль: раз в несколько минут проверяем, у кого в его часовом поясе
@@ -28,7 +28,8 @@ async function tick(bot, keyboard) {
   const now = Date.now();
   for (const account of listAccounts()) {
     const { reminders } = account;
-    if (!account.chatId || !reminders.enabled || !account.role) continue;
+    // Закрытая школа: напоминаем только участникам с одобренной заявкой.
+    if (!account.chatId || !reminders.enabled || !account.role || !hasAccess(account)) continue;
 
     const today = localDateKey(reminders.tzOffsetMin, now);
     if (reminders.lastSentDate === today || account.streak.lastActiveDate === today) continue;

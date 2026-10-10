@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DEV_USER, allowDevUser, verifyInitData } from "@/lib/telegram-auth.mjs";
-import { consume, upsertAccount } from "@/lib/store.mjs";
+import { accessStatus, consume, upsertAccount } from "@/lib/store.mjs";
 
 export type Account = ReturnType<typeof upsertAccount>;
 
@@ -12,6 +12,20 @@ export function authenticate(request: Request): Account | null {
   if (!user && !initData && allowDevUser()) user = DEV_USER;
   if (!user) return null;
   return upsertAccount(user);
+}
+
+// Закрытая школа: ИИ-функции, CRM и оплата — только после одобрения заявки.
+export function requireAccess(account: Account) {
+  const status = accessStatus(account);
+  if (status === "approved") return null;
+  return NextResponse.json(
+    {
+      error: "access",
+      status,
+      message: status === "pending" ? "Заявка на рассмотрении у администратора школы." : "Нужна одобренная заявка в школу.",
+    },
+    { status: 403 },
+  );
 }
 
 export function unauthorized() {

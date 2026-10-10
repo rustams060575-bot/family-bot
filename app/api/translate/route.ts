@@ -4,6 +4,7 @@ import {
   badRequest,
   consumeOrReject,
   serverError,
+  requireAccess,
   unauthorized,
 } from "@/lib/server/session";
 import { recordActivity, refund } from "@/lib/store.mjs";
@@ -17,6 +18,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
+  const denied = requireAccess(account);
+  if (denied) return denied;
 
   const body = await request.json().catch(() => null);
   const text = typeof body?.text === "string" ? body.text.trim().slice(0, 3000) : "";

@@ -53,7 +53,10 @@ export default function Onboarding() {
   const [role, setRole] = useState<Role | null>(null);
   const [track, setTrack] = useState<TrackId | null>(null);
   const [hour, setHour] = useState<number | null>(19);
+  const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  // VIP и админам заявка не нужна — для них финальная кнопка просто «Начать».
+  const needsApplication = account?.access !== "approved";
   const [error, setError] = useState<string | null>(null);
 
   const canContinue = (step === 0 && role) || (step === 1 && track) || step === 2;
@@ -72,6 +75,7 @@ export default function Onboarding() {
         remindersEnabled: hour !== null,
         ...(hour !== null ? { reminderHour: hour } : {}),
         tzOffsetMin: new Date().getTimezoneOffset(),
+        ...(needsApplication ? { applicationNote: note } : {}),
       });
       haptic("success");
       setAccount(updated);
@@ -183,6 +187,22 @@ export default function Onboarding() {
                     haptic("selection");
                   }}
                 />
+                {needsApplication && (
+                  <motion.div variants={rise} className="pt-4">
+                    <p className="label mb-2">Пара слов для школы — необязательно</p>
+                    <textarea
+                      className="field resize-none"
+                      rows={3}
+                      maxLength={300}
+                      placeholder="Кто вы и чему хотите научиться"
+                      value={note}
+                      onChange={(event) => setNote(event.target.value)}
+                    />
+                    <p className="mt-2 text-body text-mist">
+                      ATA Academy — закрытая школа: заявку рассмотрит администратор, ответ придёт в Telegram.
+                    </p>
+                  </motion.div>
+                )}
               </>
             )}
           </motion.div>
@@ -207,7 +227,7 @@ export default function Onboarding() {
           onClick={next}
           className="flex-1 rounded-2xl bg-paper px-6 py-4 font-sans text-body font-medium text-ink disabled:opacity-40"
         >
-          {step < STEPS - 1 ? "Продолжить" : saving ? "Сохраняем…" : "Начать"}
+          {step < STEPS - 1 ? "Продолжить" : saving ? "Отправляем…" : needsApplication ? "Отправить заявку" : "Начать"}
         </motion.button>
       </div>
     </div>

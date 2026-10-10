@@ -9,6 +9,13 @@ export type Account = {
   plan: Plan;
   // VIP (Атахан и др.): Premium без оплаты и срока, персональный тон ассистента.
   vip: boolean;
+  // Администратор школы: доступ к /admin. Супер-админ (@r_design_space) получает заявки.
+  admin: boolean;
+  superAdmin: boolean;
+  // Закрытая школа: approved — полный доступ; pending — заявка ждёт решения.
+  access: "none" | "pending" | "approved" | "rejected";
+  // После отказа — когда можно подать заявку снова.
+  reapplyAt: string | null;
   premiumUntil: string | null;
   usage: { ai: number; art: number };
   // ai: null — без дневного лимита.

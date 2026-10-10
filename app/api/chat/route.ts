@@ -4,6 +4,7 @@ import {
   badRequest,
   consumeOrReject,
   serverError,
+  requireAccess,
   unauthorized,
 } from "@/lib/server/session";
 import { displayName, isVip, recordActivity, refund } from "@/lib/store.mjs";
@@ -36,6 +37,8 @@ function sanitizeHistory(raw: unknown): Turn[] {
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
+  const denied = requireAccess(account);
+  if (denied) return denied;
 
   const body = await request.json().catch(() => null);
   const track = body?.track;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticate, badRequest, unauthorized } from "@/lib/server/session";
+import { authenticate, badRequest, requireAccess, unauthorized } from "@/lib/server/session";
 import { synthesizeSpeech, ttsAllowed } from "@/lib/ai.mjs";
 import { isPremium } from "@/lib/store.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
@@ -15,6 +15,8 @@ const MAX_TTS_CHARS = 700;
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
+  const denied = requireAccess(account);
+  if (denied) return denied;
   if (!ttsAllowed(isPremium(account))) {
     return NextResponse.json({ error: "tts_unavailable" }, { status: 503 });
   }

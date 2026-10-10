@@ -4,7 +4,8 @@ import { fileURLToPath } from "url";
 import { Telegraf, Markup } from "telegraf";
 import { message } from "telegraf/filters";
 import { groqChat, logDetailedError } from "../lib/groq.mjs";
-import { DATA_DIR, grantPremium, upsertAccount } from "../lib/store.mjs";
+import { DATA_DIR, decideApplication, getAccount, grantPremium, isAdmin, upsertAccount } from "../lib/store.mjs";
+import { applicationText, notifyDecision } from "../lib/notify.mjs";
 import { telegramBotToken } from "../lib/telegram-auth.mjs";
 import { startReminders } from "./reminders.mjs";
 
@@ -280,6 +281,37 @@ Username: @${ctx.from.username}` : ""}`),
     await ctx.reply(`Premium активен${until ? ` до ${until}` : ""}. Спасибо, что вы с ATA Academy.`, openAppKeyboard());
   });
 
+  // Закрытая школа: решение по заявке кнопкой прямо из уведомления. Права проверяются
+  // по нажавшему (username/ID из списка админов), а не по тому, кому пришло сообщение.
+  bot.action(/^acc:(approved|rejected):(\d+)$/, async (ctx) => {
+    const admin = upsertAccount(ctx.from);
+    if (!isAdmin(admin)) {
+      await ctx.answerCbQuery("Решать по заявкам может только администратор школы.", { show_alert: true });
+      return;
+    }
+    const [, decision, userId] = ctx.match;
+    const applicant = getAccount(userId);
+    if (!applicant) {
+      await ctx.answerCbQuery("Заявитель не найден.");
+      return;
+    }
+    if (applicant.access?.status === decision) {
+      await ctx.answerCbQuery("Это решение уже принято.");
+      return;
+    }
+    const decided = decideApplication(userId, decision, admin);
+    await notifyDecision(decided);
+    await ctx.answerCbQuery(decision === "approved" ? "Принято" : "Отклонено");
+    try {
+      await ctx.editMessageText(
+        `${applicationText(decided)}\n\n${decision === "approved" ? "✓ Принято" : "✕ Отклонено"} — ` +
+          (admin.username ? `@${admin.username}` : admin.firstName),
+      );
+    } catch {
+      // сообщение могли уже отредактировать с другого устройства
+    }
+  });
+
   bot.on(message("text"), (ctx) => respond(ctx, ctx.message.text));
 
   // Голосовые и аудиосообщения в чате не обрабатываются — заглушка отвечает сразу,
@@ -326,7 +358,7 @@ async function launchBotWithRetry(bot, maxAttempts = 5, delayMs = 5000) {
       // launch() резолвится только при остановке поллинга, поэтому не ждём его,
       // а ловим ошибку старта через onLaunch-колбэк Telegraf.
       await new Promise((resolve, reject) => {
-        bot.launch({ allowedUpdates: ["message", "pre_checkout_query"] }, resolve).catch(reject);
+        bot.launch({ allowedUpdates: ["message", "pre_checkout_query", "callback_query"] }, resolve).catch(reject);
       });
       console.log("ATA Academy bot ishga tushdi.");
       return true;

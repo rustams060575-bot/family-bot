@@ -4,6 +4,7 @@ import {
   badRequest,
   consumeOrReject,
   serverError,
+  requireAccess,
   unauthorized,
 } from "@/lib/server/session";
 import { displayName, isVip, recordActivity, refund } from "@/lib/store.mjs";
@@ -20,6 +21,8 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
+  const denied = requireAccess(account);
+  if (denied) return denied;
   if (!visionProvider()) {
     return NextResponse.json(
       { error: "vision_unavailable", message: "Анализ рисунков ещё не подключён." },

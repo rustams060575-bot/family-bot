@@ -19,7 +19,7 @@ const TABS = [
 export default function TabBar() {
   const pathname = usePathname();
   const { account, haptic } = useApp();
-  if (!account?.role) return null;
+  if (!account?.role || account.access !== "approved") return null;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 px-4 pb-safe">

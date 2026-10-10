@@ -3,9 +3,10 @@
 import { motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import Onboarding from "@/components/Onboarding";
+import PendingAccess from "@/components/PendingAccess";
 import { press } from "@/lib/motion";
 
-// Общий вход каждого экрана: загрузка → ошибка → онбординг → содержимое.
+// Общий вход каждого экрана: загрузка → ошибка → онбординг → заявка в школу → содержимое.
 export default function AppGate({ children }: { children: React.ReactNode }) {
   const { status, account, refresh } = useApp();
 
@@ -42,5 +43,6 @@ export default function AppGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!account.role) return <Onboarding />;
+  if (account.access !== "approved") return <PendingAccess />;
   return <>{children}</>;
 }
