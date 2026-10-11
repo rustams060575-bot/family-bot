@@ -16,7 +16,7 @@ function CrmScreen() {
         eyebrow={`ATA CRM${account.firstName ? ` · ${account.firstName}` : ""}`}
         title={
           <>
-            {copy.title} <em className="italic text-champagne">{copy.accent}</em>
+            {copy.title} <span className="text-champagne">{copy.accent}</span>
           </>
         }
         caption="Любой предмет и возраст — от первоклассника до взрослых учеников. Ассистент подстроит план занятия."

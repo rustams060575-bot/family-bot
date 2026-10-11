@@ -21,17 +21,17 @@ function LangPicker({ value, onChange, includeAuto }: { value: string; onChange:
   const options = includeAuto ? [{ id: "auto", label: "Авто", name: "Определить язык" }, ...LANGS] : LANGS;
   return (
     <div>
-      <div className={`grid gap-1 ${includeAuto ? "grid-cols-5" : "grid-cols-4"}`}>
+      <div className={`grid gap-0.5 rounded-full bg-fill p-0.5 ${includeAuto ? "grid-cols-5" : "grid-cols-4"}`}>
         {options.map((option) => (
           <button key={option.id} onClick={() => onChange(option.id)} aria-label={option.name} className="relative min-h-11 rounded-full">
             {value === option.id && (
               <motion.span
                 layoutId={includeAuto ? "lang-from" : "lang-to"}
                 transition={spring}
-                className="absolute inset-0 rounded-full bg-tint/10"
+                className="absolute inset-0 rounded-full segment-thumb"
               />
             )}
-            <span className={`relative font-sans text-label font-medium uppercase tracking-[0.12em] ${value === option.id ? "text-paper" : "text-dim"}`}>
+            <span className={`relative text-subhead font-medium ${value === option.id ? "text-paper" : "text-dim"}`}>
               {option.label}
             </span>
           </button>
@@ -120,12 +120,12 @@ export default function Translator() {
           placeholder="Введите текст"
           rows={4}
           maxLength={3000}
-          className="mt-2 w-full resize-none bg-transparent px-2 py-2 font-serif text-h3 font-light text-paper outline-none placeholder:text-dim"
+          className="mt-2 w-full resize-none bg-transparent px-2 py-2 text-title3 text-paper outline-none placeholder:text-dim"
         />
       </motion.div>
 
       <motion.div variants={rise} className="flex items-center justify-between">
-        <div className="relative grid grid-cols-2 rounded-full bg-tint/[0.04] p-1">
+        <div className="relative grid grid-cols-2 rounded-full bg-fill p-1">
           {(["casual", "business"] as const).map((value) => (
             <button
               key={value}
@@ -135,8 +135,8 @@ export default function Translator() {
               }}
               className="relative min-h-11 px-4"
             >
-              {register === value && <motion.span layoutId="register" transition={spring} className="absolute inset-0 rounded-full bg-tint/10" />}
-              <span className={`relative font-sans text-label font-medium uppercase ${register === value ? "text-paper" : "text-dim"}`}>
+              {register === value && <motion.span layoutId="register" transition={spring} className="absolute inset-0 rounded-full segment-thumb" />}
+              <span className={`relative text-subhead font-medium ${register === value ? "text-paper" : "text-dim"}`}>
                 {value === "casual" ? "Бытовой" : "Деловой"}
               </span>
             </button>
@@ -146,7 +146,7 @@ export default function Translator() {
           {...press}
           onClick={swap}
           aria-label="Поменять языки местами"
-          className="grid h-11 w-11 place-items-center rounded-full bg-tint/[0.06] text-mist"
+          className="grid h-11 w-11 place-items-center rounded-full bg-fill text-mist"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
             <path d="M5 3v12M5 15l-3-3M5 15l3-3M13 15V3M13 3l-3 3M13 3l3 3" strokeLinecap="round" strokeLinejoin="round" />
@@ -161,7 +161,7 @@ export default function Translator() {
             {loading ? (
               <motion.p
                 key="loading"
-                className="font-serif text-h3 font-light italic text-dim"
+                className="text-title3 font-semibold text-dim"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: [0.35, 0.9, 0.35] }}
                 exit={{ opacity: 0, transition: exit }}
@@ -171,7 +171,7 @@ export default function Translator() {
               </motion.p>
             ) : result ? (
               <motion.div key={result.translation} variants={rise} initial="hidden" animate="show" exit="leave">
-                <p className="whitespace-pre-wrap font-serif text-h3 font-light text-paper">{result.translation}</p>
+                <p className="whitespace-pre-wrap text-title3 font-semibold text-paper">{result.translation}</p>
                 {result.alternatives.length > 0 && (
                   <div className="mt-4 space-y-1">
                     <p className="label">Ещё варианты</p>
@@ -186,16 +186,16 @@ export default function Translator() {
                   <p className="mt-4 rounded-2xl bg-champagne/[0.07] px-4 py-2 text-body text-paper/90">{result.note}</p>
                 )}
                 <div className="mt-4 flex gap-2">
-                  <motion.button {...press} onClick={listen} className="min-h-11 rounded-full bg-tint/[0.06] px-4 font-sans text-label font-medium uppercase text-mist">
+                  <motion.button {...press} onClick={listen} className="min-h-11 rounded-full bg-fill px-4 text-subhead font-semibold text-champagne">
                     Прослушать
                   </motion.button>
-                  <motion.button {...press} onClick={copy} className="min-h-11 rounded-full bg-tint/[0.06] px-4 font-sans text-label font-medium uppercase text-mist">
+                  <motion.button {...press} onClick={copy} className="min-h-11 rounded-full bg-fill px-4 text-subhead font-semibold text-champagne">
                     {copied ? "Скопировано" : "Копировать"}
                   </motion.button>
                 </div>
               </motion.div>
             ) : (
-              <motion.p key="empty" className="font-serif text-h3 font-light italic text-dim" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: enter }}>
+              <motion.p key="empty" className="text-title3 font-semibold text-dim" initial={{ opacity: 0 }} animate={{ opacity: 1, transition: enter }}>
                 Перевод появится здесь
               </motion.p>
             )}
@@ -210,7 +210,7 @@ export default function Translator() {
         {...press}
         disabled={!text.trim() || loading}
         onClick={translate}
-        className="w-full rounded-2xl bg-paper px-6 py-4 font-sans text-body font-medium text-ink disabled:opacity-40"
+        className="w-full rounded-[0.875rem] bg-paper px-6 py-4 text-headline font-semibold text-ink disabled:opacity-40"
       >
         Перевести
       </motion.button>

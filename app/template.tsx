@@ -12,7 +12,7 @@ export default function Template({ children }: { children: React.ReactNode }) {
       initial={{ opacity: 0, y: 8, filter: "blur(6px)" }}
       animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
       transition={enter}
-      className="flex flex-1 flex-col px-6 pb-32 pt-safe"
+      className="flex flex-1 flex-col px-4 pb-32 pt-safe"
     >
       {children}
     </motion.main>

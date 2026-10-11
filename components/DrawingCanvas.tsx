@@ -132,7 +132,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
           }}
         />
         {count === 0 && (
-          <p className="pointer-events-none absolute inset-0 grid place-items-center font-serif text-h3 italic text-black/25">
+          <p className="pointer-events-none absolute inset-0 grid place-items-center text-title3 font-semibold text-black/25">
             Черновик идеи
           </p>
         )}
@@ -161,8 +161,8 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
         <motion.button
           {...press}
           onClick={() => setErase((value) => !value)}
-          className={`min-h-11 rounded-full px-4 font-sans text-label font-medium uppercase ${
-            erase ? "bg-paper text-ink" : "bg-tint/[0.06] text-mist"
+          className={`min-h-11 rounded-full px-4 text-subhead font-medium ${
+            erase ? "bg-paper text-ink" : "bg-fill text-champagne"
           }`}
         >
           Ластик
@@ -192,7 +192,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
               setCount(strokes.current.length);
               redraw();
             }}
-            className="min-h-11 rounded-full bg-tint/[0.06] px-4 font-sans text-label font-medium uppercase text-mist disabled:opacity-40"
+            className="min-h-11 rounded-full bg-fill px-4 text-subhead font-semibold text-champagne disabled:opacity-40"
           >
             Отменить
           </motion.button>
@@ -204,7 +204,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
               setCount(0);
               redraw();
             }}
-            className="min-h-11 rounded-full bg-tint/[0.06] px-4 font-sans text-label font-medium uppercase text-mist disabled:opacity-40"
+            className="min-h-11 rounded-full bg-fill px-4 text-subhead font-semibold text-champagne disabled:opacity-40"
           >
             Очистить
           </motion.button>

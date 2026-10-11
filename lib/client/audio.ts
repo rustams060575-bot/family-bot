@@ -4,7 +4,9 @@
 // по жесту пользователя: в iOS WebView это единственный способ потом проиграть звук,
 // пришедший асинхронно (после запросов к API), без блокировки автовоспроизведения.
 
-const RECORDER_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+// iOS (Telegram WebView и Safari) пишет только mp4/AAC — он идёт первым, если поддержан:
+// так запись гарантированно читается Whisper. Chrome и Android берут webm/opus.
+const RECORDER_TYPES = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"];
 
 export class AudioEngine {
   private context: AudioContext | null = null;
@@ -64,7 +66,9 @@ export class AudioEngine {
     this.recorder.ondataavailable = (event) => {
       if (event.data.size > 0) this.chunks.push(event.data);
     };
-    this.recorder.start(250);
+    // Без timeslice: Safari при нарезке на куски иногда пишет mp4 без заголовков в хвостовых
+    // фрагментах — цельная запись отдаётся одним куском на stop() и всегда валидна.
+    this.recorder.start();
   }
 
   stopRecording(): Promise<Blob | null> {

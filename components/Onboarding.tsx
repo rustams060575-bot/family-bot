@@ -32,12 +32,12 @@ function Option({
       className={`glass flex w-full items-center gap-4 p-4 text-left ${selected ? "glass-accent" : ""}`}
     >
       {mark && (
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-tint/[0.05] font-serif text-lead italic text-champagne">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-fill text-headline font-semibold text-champagne">
           {mark}
         </span>
       )}
       <span className="flex-1">
-        <span className="block font-sans text-body font-medium text-paper">{title}</span>
+        <span className="block text-body font-medium text-paper">{title}</span>
         <span className="mt-1 block text-body text-mist">{caption}</span>
       </span>
       <span className="relative grid h-6 w-6 place-items-center rounded-full ring-1 ring-tint/20">
@@ -87,13 +87,13 @@ export default function Onboarding() {
 
   const titles = [
     <>
-      Кто <em className="italic text-champagne">вы</em>?
+      Кто <span className="text-champagne">вы</span>?
     </>,
     <>
-      С чего <em className="italic text-champagne">начнём</em>?
+      С чего <span className="text-champagne">начнём</span>?
     </>,
     <>
-      Когда <em className="italic text-champagne">напомнить</em>?
+      Когда <span className="text-champagne">напомнить</span>?
     </>,
   ];
 
@@ -103,10 +103,10 @@ export default function Onboarding() {
         <motion.p variants={rise} className="label">
           ATA Academy
         </motion.p>
-        <motion.h1 variants={rise} className="mt-4 font-serif text-display font-light">
+        <motion.h1 variants={rise} className="mt-4 text-large-title font-bold">
           {account?.firstName ? `${account.firstName},` : "Добро"}
           <br />
-          <em className="italic">{account?.firstName ? "добро пожаловать" : "пожаловать"}</em>
+          <span>{account?.firstName ? "добро пожаловать" : "пожаловать"}</span>
         </motion.h1>
       </motion.div>
 
@@ -134,7 +134,7 @@ export default function Onboarding() {
           <p className="label">
             Шаг {step + 1} из {STEPS}
           </p>
-          <h2 className="mb-6 mt-2 font-serif text-h2 font-light">{titles[step]}</h2>
+          <h2 className="mb-6 mt-2 text-title2 font-bold">{titles[step]}</h2>
 
           <motion.div variants={stagger(0.05)} initial="hidden" animate="show" className="space-y-2">
             {step === 0 &&
@@ -211,12 +211,12 @@ export default function Onboarding() {
 
       {error && <p className="mt-4 text-center text-body text-danger">{error}</p>}
 
-      <div className="sticky bottom-0 -mx-6 mt-8 flex gap-2 bg-gradient-to-t from-ink via-ink/95 to-transparent px-6 pb-6 pt-8">
+      <div className="sticky bottom-0 -mx-4 mt-8 flex gap-2 bg-gradient-to-t from-ink via-ink/95 to-transparent px-4 pb-6 pt-8">
         {step > 0 && (
           <motion.button
             {...press}
             onClick={() => setStep(step - 1)}
-            className="rounded-2xl bg-tint/[0.06] px-6 py-4 font-sans text-body text-mist"
+            className="rounded-[0.875rem] bg-fill px-6 py-4 text-body font-semibold text-champagne"
           >
             Назад
           </motion.button>
@@ -225,7 +225,7 @@ export default function Onboarding() {
           {...press}
           disabled={!canContinue || saving}
           onClick={next}
-          className="flex-1 rounded-2xl bg-paper px-6 py-4 font-sans text-body font-medium text-ink disabled:opacity-40"
+          className="flex-1 rounded-[0.875rem] bg-paper px-6 py-4 text-headline font-semibold text-ink disabled:opacity-40"
         >
           {step < STEPS - 1 ? "Продолжить" : saving ? "Отправляем…" : needsApplication ? "Отправить заявку" : "Начать"}
         </motion.button>

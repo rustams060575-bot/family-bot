@@ -11,7 +11,7 @@ export default function TranslatePage() {
         eyebrow="ATA Translate"
         title={
           <>
-            Говорите <em className="italic text-champagne">свободно</em>
+            Говорите <span className="text-champagne">свободно</span>
           </>
         }
         caption="Узбекский, русский, испанский и английский — бытовой и деловой регистр."

@@ -5,20 +5,29 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import DrawingCanvas, { type DrawingCanvasHandle } from "@/components/DrawingCanvas";
 import { ApiError, apiJson } from "@/lib/client/api";
+import { martinaGreeting } from "@/lib/client/tracks";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Analysis = {
   title: string;
-  strengths: { title: string; text: string }[];
-  tip: { title: string; text: string };
+  praise: string;
+  colors: { name: string; hex: string | null }[];
+  details: { title: string; text: string }[];
+  question: string;
   nextTask: { title: string; steps: string[]; materials: string };
 };
 
 type Source = "photo" | "canvas";
 const MAX_SIDE = 1600;
+const SENDABLE = ["image/jpeg", "image/png", "image/webp"];
 
-// Фото с телефона бывают по 12 Мп — уменьшаем до 1600 px по длинной стороне:
-// для разбора композиции этого достаточно, а загрузка в разы быстрее.
+// Мягкие реплики Мартины вместо системных ошибок.
+const LOOK_AGAIN = "Ой, я не успела как следует рассмотреть рисунок. Давай попробуем ещё раз?";
+const CANT_OPEN = "Ой, это фото у меня не открылось. Сфотографируй рисунок ещё разок, пожалуйста!";
+const EMPTY_CANVAS = "Холст пока пустой — нарисуй что-нибудь, и я сразу посмотрю!";
+
+// Фото с телефона бывают по 12 Мп и в HEIC — перекодируем в JPEG до 1600 px по длинной
+// стороне: для разбора этого достаточно, загрузка в разы быстрее, а формат понятен любому Vision.
 async function downscale(file: Blob): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
@@ -33,7 +42,9 @@ async function downscale(file: Blob): Promise<Blob> {
     canvas.width = Math.round(image.naturalWidth * scale);
     canvas.height = Math.round(image.naturalHeight * scale);
     canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob ?? file), "image/jpeg", 0.86));
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+    if (!blob) throw new Error("toBlob вернул null");
+    return blob;
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -45,10 +56,11 @@ export default function ArtAnalyzer() {
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null);
   const [status, setStatus] = useState<"idle" | "analyzing" | "done">("idle");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
+  const kid = !!account?.kid;
 
   useEffect(
     () => () => {
@@ -61,8 +73,13 @@ export default function ArtAnalyzer() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    setError(null);
-    const blob = await downscale(file).catch(() => file);
+    setNote(null);
+    const blob = await downscale(file).catch(() => (SENDABLE.includes(file.type) ? file : null));
+    if (!blob) {
+      setNote(CANT_OPEN);
+      haptic("warning");
+      return;
+    }
     setImage({ blob, url: URL.createObjectURL(blob) });
     setAnalysis(null);
     setStatus("idle");
@@ -72,7 +89,7 @@ export default function ArtAnalyzer() {
   async function analyze(blob: Blob) {
     haptic("medium");
     setStatus("analyzing");
-    setError(null);
+    setNote(null);
     try {
       const form = new FormData();
       form.append("image", blob, "drawing.jpg");
@@ -83,17 +100,26 @@ export default function ArtAnalyzer() {
       refresh();
     } catch (err) {
       setStatus("idle");
-      setError(err instanceof ApiError && err.status === 422 ? err.message : handleError(err));
+      if (err instanceof ApiError && err.status === 422) {
+        setNote(err.message);
+        haptic("warning");
+        return;
+      }
+      // Лимит открывает плашку Premium; любой другой сбой — мягкая реплика Мартины.
+      if (handleError(err) !== null) setNote(LOOK_AGAIN);
     }
   }
 
   async function analyzeCanvas() {
     if (canvasRef.current?.isEmpty()) {
-      setError("Сначала нарисуйте что-нибудь.");
+      setNote(EMPTY_CANVAS);
       return;
     }
     const blob = await canvasRef.current?.exportBlob();
-    if (!blob) return;
+    if (!blob) {
+      setNote(LOOK_AGAIN);
+      return;
+    }
     setImage({ blob, url: URL.createObjectURL(blob) });
     analyze(blob);
   }
@@ -102,140 +128,168 @@ export default function ArtAnalyzer() {
     setImage(null);
     setAnalysis(null);
     setStatus("idle");
-    setError(null);
+    setNote(null);
   }
 
   if (!features.vision) {
     return (
-      <div className="glass p-6">
+      <div className="glass p-5">
         <p className="label">Скоро</p>
-        <p className="mt-4 text-body text-mist">Разбор рисунков подключается. Загляните чуть позже.</p>
+        <p className="mt-2 text-body text-mist">Разбор рисунков подключается. Загляните чуть позже.</p>
       </div>
     );
   }
 
   const left = account ? Math.max(0, account.limits.art - account.usage.art) : 0;
+  const greeting = kid
+    ? `${martinaGreeting(account?.firstName)} Покажи мне свой рисунок — мне очень интересно, что ты нарисовал!`
+    : `${martinaGreeting()} Покажите мне рисунок ребёнка — я отмечу, что получилось, и предложу новое задание.`;
 
   return (
     <div>
-      {status !== "done" && (
-        <div className="relative mb-6 grid grid-cols-2 rounded-2xl bg-tint/[0.04] p-1">
-          {(["photo", "canvas"] as Source[]).map((value) => (
-            <button
-              key={value}
-              onClick={() => {
-                setSource(value);
-                haptic("selection");
-              }}
-              className="relative z-10 py-2 font-sans text-label font-medium uppercase"
-            >
-              {source === value && (
-                <motion.span layoutId="art-source" transition={spring} className="absolute inset-0 -z-10 rounded-xl bg-tint/10" />
-              )}
-              <span className={source === value ? "text-paper" : "text-dim"}>
-                {value === "photo" ? "Фото с бумаги" : "Черновик"}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
       <input ref={cameraInput} type="file" accept="image/*" capture="environment" hidden onChange={pickFile} />
       <input ref={galleryInput} type="file" accept="image/*" hidden onChange={pickFile} />
 
       <AnimatePresence mode="wait">
         {status === "done" && analysis ? (
           <Result key="result" analysis={analysis} imageUrl={image?.url} onAgain={startOver} />
-        ) : source === "photo" ? (
-          <motion.div key="photo" variants={rise} initial="hidden" animate="show" exit="leave">
-            {image ? (
-              <div className="glass overflow-hidden p-2">
-                <div className="relative overflow-hidden rounded-2xl">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={image.url} alt="Рисунок" className="block max-h-[56vh] w-full object-contain" />
-                  {status === "analyzing" && <ScanLine />}
-                </div>
-              </div>
-            ) : (
-              <motion.button
-                {...press}
-                onClick={() => cameraInput.current?.click()}
-                className="glass glass-accent flex aspect-[4/5] w-full flex-col items-center justify-center gap-4 p-8"
-              >
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1.2" className="text-champagne" aria-hidden>
-                  <rect x="4" y="10" width="32" height="24" rx="6" />
-                  <circle cx="20" cy="22" r="6.5" />
-                  <path d="M14 10l2.5-4h7L26 10" strokeLinejoin="round" />
-                </svg>
-                <span className="font-serif text-h3 font-light">Сфотографируйте рисунок</span>
-                <span className="max-w-[16rem] text-center text-body text-mist">
-                  Положите лист на ровную поверхность при дневном свете
-                </span>
-              </motion.button>
-            )}
-
-            <div className="mt-4 flex gap-2">
-              {image ? (
-                <>
-                  <motion.button
-                    {...press}
-                    disabled={status === "analyzing"}
-                    onClick={() => cameraInput.current?.click()}
-                    className="rounded-2xl bg-tint/[0.06] px-6 py-4 font-sans text-body text-mist disabled:opacity-40"
-                  >
-                    Переснять
-                  </motion.button>
-                  <motion.button
-                    {...press}
-                    disabled={status === "analyzing"}
-                    onClick={() => analyze(image.blob)}
-                    className="flex-1 rounded-2xl bg-paper px-6 py-4 font-sans text-body font-medium text-ink disabled:opacity-60"
-                  >
-                    {status === "analyzing" ? "Смотрим на рисунок…" : "Разобрать рисунок"}
-                  </motion.button>
-                </>
-              ) : (
-                <motion.button
-                  {...press}
-                  onClick={() => galleryInput.current?.click()}
-                  className="w-full rounded-2xl bg-tint/[0.06] px-6 py-4 font-sans text-body text-mist"
-                >
-                  Выбрать из галереи
-                </motion.button>
-              )}
-            </div>
-          </motion.div>
         ) : (
-          <motion.div key="canvas" variants={rise} initial="hidden" animate="show" exit="leave">
-            <DrawingCanvas ref={canvasRef} />
-            <motion.button
-              {...press}
-              disabled={status === "analyzing"}
-              onClick={analyzeCanvas}
-              className="mt-6 w-full rounded-2xl bg-paper px-6 py-4 font-sans text-body font-medium text-ink disabled:opacity-60"
-            >
-              {status === "analyzing" ? "Смотрим на черновик…" : "Показать педагогу"}
-            </motion.button>
+          <motion.div key="pick" variants={rise} initial="hidden" animate="show" exit="leave">
+            <MartinaNote text={greeting} />
+
+            {/* Источник рисунка — сегментированный контрол iOS */}
+            <div className="relative mb-4 mt-6 grid grid-cols-2 rounded-[0.5625rem] bg-fill p-0.5">
+              {(["photo", "canvas"] as Source[]).map((value) => (
+                <button
+                  key={value}
+                  onClick={() => {
+                    setSource(value);
+                    setNote(null);
+                    haptic("selection");
+                  }}
+                  className="relative z-10 min-h-9 px-2 text-subhead font-semibold"
+                  aria-pressed={source === value}
+                >
+                  {source === value && (
+                    <motion.span
+                      layoutId="art-source"
+                      transition={spring}
+                      className="absolute inset-0 -z-10 rounded-[0.4375rem] segment-thumb"
+                    />
+                  )}
+                  <span className={source === value ? "text-paper" : "text-mist"}>
+                    {value === "photo" ? "📸 Фото с бумаги" : "🎨 Холст"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <AnimatePresence mode="wait" initial={false}>
+              {source === "photo" ? (
+                <motion.div key="photo" variants={rise} initial="hidden" animate="show" exit="leave">
+                  {image ? (
+                    <div className="glass overflow-hidden p-2">
+                      <div className="relative overflow-hidden rounded-[0.875rem]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={image.url} alt="Рисунок" className="block max-h-[56vh] w-full object-contain" />
+                        {status === "analyzing" && <ScanLine />}
+                      </div>
+                    </div>
+                  ) : (
+                    <motion.button
+                      {...press}
+                      onClick={() => cameraInput.current?.click()}
+                      className="glass flex aspect-[4/5] w-full flex-col items-center justify-center gap-3 p-8"
+                    >
+                      <span className="grid h-16 w-16 place-items-center rounded-full bg-champagne/[0.14] text-champagne">
+                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+                          <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7l1.3-2h7l1.3 2h1.7A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" strokeLinejoin="round" />
+                          <circle cx="12" cy="13" r="3.8" />
+                        </svg>
+                      </span>
+                      <span className="text-title3 font-semibold">Сфотографировать рисунок с бумаги</span>
+                      <span className="max-w-[16rem] text-center text-subhead text-mist">
+                        Положи лист на ровный стол при дневном свете
+                      </span>
+                    </motion.button>
+                  )}
+
+                  <div className="mt-4 flex gap-2">
+                    {image ? (
+                      <>
+                        <motion.button
+                          {...press}
+                          disabled={status === "analyzing"}
+                          onClick={() => cameraInput.current?.click()}
+                          className="min-h-[3.125rem] rounded-[0.875rem] bg-fill px-5 text-headline font-semibold text-champagne disabled:opacity-40"
+                        >
+                          Переснять
+                        </motion.button>
+                        <motion.button
+                          {...press}
+                          disabled={status === "analyzing"}
+                          onClick={() => analyze(image.blob)}
+                          className="min-h-[3.125rem] flex-1 rounded-[0.875rem] bg-paper px-5 text-headline font-semibold text-ink disabled:opacity-60"
+                        >
+                          {status === "analyzing" ? "Мартина смотрит…" : "Показать Мартине"}
+                        </motion.button>
+                      </>
+                    ) : (
+                      <motion.button
+                        {...press}
+                        onClick={() => galleryInput.current?.click()}
+                        className="min-h-[3.125rem] w-full rounded-[0.875rem] bg-fill px-5 text-headline font-semibold text-champagne"
+                      >
+                        Выбрать из галереи
+                      </motion.button>
+                    )}
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key="canvas" variants={rise} initial="hidden" animate="show" exit="leave">
+                  <DrawingCanvas ref={canvasRef} />
+                  <motion.button
+                    {...press}
+                    disabled={status === "analyzing"}
+                    onClick={analyzeCanvas}
+                    className="mt-6 min-h-[3.125rem] w-full rounded-[0.875rem] bg-paper px-5 text-headline font-semibold text-ink disabled:opacity-60"
+                  >
+                    {status === "analyzing" ? "Мартина смотрит…" : "Показать Мартине"}
+                  </motion.button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {note && (
+                <motion.div
+                  key={note}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0, transition: enter }}
+                  exit={{ opacity: 0, transition: exit }}
+                  className="mt-4"
+                >
+                  <MartinaNote text={note} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {account && <p className="mt-4 text-center text-footnote text-dim">Разборов сегодня: {left} из {account.limits.art}</p>}
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
 
-      {status !== "done" && account && (
-        <p className="label mt-4 text-center">Разборов сегодня: {left} из {account.limits.art}</p>
-      )}
-
-      <AnimatePresence>
-        {error && (
-          <motion.p
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0, transition: enter }}
-            exit={{ opacity: 0, transition: exit }}
-            className="mt-4 text-center text-body text-danger"
-          >
-            {error}
-          </motion.p>
-        )}
-      </AnimatePresence>
+// Реплика Мартины: монограмма + пузырь, как в чате занятий.
+function MartinaNote({ text }: { text: string }) {
+  return (
+    <div className="flex items-end gap-2">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-champagne text-headline font-semibold text-ink" aria-hidden>
+        М
+      </span>
+      <p className="rounded-[1.25rem] rounded-bl-md bg-ink-raised px-4 py-3 text-body text-paper shadow-[var(--card-shadow)]">{text}</p>
     </div>
   );
 }
@@ -280,58 +334,102 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
       <motion.div variants={rise} className="flex items-center gap-4">
         {imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUrl} alt="" className="h-16 w-16 rounded-2xl object-cover ring-1 ring-tint/10" />
+          <img src={imageUrl} alt="" className="h-16 w-16 rounded-[0.875rem] object-cover" />
         )}
-        <div>
-          <p className="label">Рисунок</p>
-          <h2 className="mt-2 font-serif text-h2 font-light">{analysis.title}</h2>
+        <div className="min-w-0">
+          <p className="label">Твой рисунок</p>
+          <h2 className="mt-0.5 text-title2 font-bold">{analysis.title}</h2>
         </div>
       </motion.div>
 
-      {analysis.strengths.map((strength, index) => (
-        <motion.div key={index} variants={rise} className="glass glass-accent relative overflow-hidden p-6">
-          <Sparkle delay={0.5 + index * 0.25} size={16} className="right-6 top-6" />
-          <Sparkle delay={0.65 + index * 0.25} size={10} className="right-12 top-12" />
-          <Sparkle delay={0.8 + index * 0.25} size={8} className="right-4 top-16" />
-          <p className="label text-champagne/80">Получилось</p>
-          <h3 className="mt-2 pr-12 font-serif text-h3 font-light">{strength.title}</h3>
-          <p className="mt-2 text-body text-paper/90">{strength.text}</p>
+      <motion.div variants={rise} className="relative">
+        <MartinaNote text={analysis.praise} />
+        <Sparkle delay={0.5} size={16} className="-top-2 right-2" />
+        <Sparkle delay={0.7} size={10} className="right-8 top-2" />
+      </motion.div>
+
+      {!!analysis.colors.length && (
+        <motion.div variants={rise}>
+          <p className="label px-4 pb-2">Твои цвета</p>
+          <div className="flex flex-wrap gap-2">
+            {analysis.colors.map((color) => (
+              <span key={color.name} className="flex min-h-9 items-center gap-2 rounded-full bg-ink-raised py-1 pl-1.5 pr-4 text-subhead text-paper">
+                <span
+                  className="h-6 w-6 rounded-full ring-1 ring-inset ring-tint/10"
+                  style={{ background: color.hex ?? "var(--fill)" }}
+                  aria-hidden
+                />
+                {color.name}
+              </span>
+            ))}
+          </div>
         </motion.div>
-      ))}
+      )}
 
-      <motion.div variants={rise} className="glass p-6">
-        <p className="label">Совет</p>
-        <h3 className="mt-2 font-serif text-h3 font-light">{analysis.tip.title}</h3>
-        <p className="mt-2 text-body text-mist">{analysis.tip.text}</p>
-      </motion.div>
+      {!!analysis.details.length && (
+        <motion.div variants={rise}>
+          <p className="label px-4 pb-2">Что получилось</p>
+          <div className="glass overflow-hidden">
+            {analysis.details.map((detail, index) => (
+              <div key={index}>
+                {index > 0 && <div className="hairline ml-14" />}
+                <div className="flex gap-3 px-4 py-3">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-champagne/[0.14] text-champagne" aria-hidden>
+                    <svg width="14" height="14" viewBox="0 0 24 24">
+                      <path d="M12 0c.7 6.4 5 11.3 12 12-7 .7-11.3 5.6-12 12-.7-6.4-5-11.3-12-12 7-.7 11.3-5.6 12-12z" fill="currentColor" />
+                    </svg>
+                  </span>
+                  <div>
+                    <p className="text-headline font-semibold">{detail.title}</p>
+                    <p className="mt-0.5 text-subhead text-mist">{detail.text}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
-      <motion.div variants={rise} className="glass p-6">
-        <p className="label">Следующее задание</p>
-        <h3 className="mt-2 font-serif text-h2 font-light italic">{analysis.nextTask.title}</h3>
-        <ol className="mt-4 space-y-2">
-          {analysis.nextTask.steps.map((step, index) => (
-            <li key={index} className="flex gap-4 text-body text-paper/90">
-              <span className="font-serif text-lead italic text-champagne">{index + 1}</span>
-              <span className="pt-1">{step}</span>
-            </li>
-          ))}
-        </ol>
-        {analysis.nextTask.materials && (
-          <>
-            <div className="hairline my-4" />
-            <p className="text-body text-mist">
-              <span className="label mr-2">Понадобится</span>
-              {analysis.nextTask.materials}
-            </p>
-          </>
-        )}
-      </motion.div>
+      {analysis.question && (
+        <motion.div variants={rise} className="glass glass-accent p-5">
+          <p className="text-footnote font-semibold text-champagne">Вопрос от Мартины</p>
+          <p className="mt-1 text-title3 font-semibold">{analysis.question}</p>
+        </motion.div>
+      )}
+
+      {analysis.nextTask.title && (
+        <motion.div variants={rise}>
+          <p className="label px-4 pb-2">Новое задание</p>
+          <div className="glass p-5">
+            <h3 className="text-title3 font-semibold">{analysis.nextTask.title}</h3>
+            <ol className="mt-3 space-y-2">
+              {analysis.nextTask.steps.map((step, index) => (
+                <li key={index} className="flex gap-3 text-body">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-fill text-footnote font-semibold tabular-nums text-paper">
+                    {index + 1}
+                  </span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+            {analysis.nextTask.materials && (
+              <>
+                <div className="hairline my-3" />
+                <p className="text-subhead text-mist">
+                  <span className="font-semibold text-paper">Понадобится: </span>
+                  {analysis.nextTask.materials}
+                </p>
+              </>
+            )}
+          </div>
+        </motion.div>
+      )}
 
       <motion.button
         variants={rise}
         {...press}
         onClick={onAgain}
-        className="w-full rounded-2xl bg-paper px-6 py-4 font-sans text-body font-medium text-ink"
+        className="min-h-[3.125rem] w-full rounded-[0.875rem] bg-paper px-5 text-headline font-semibold text-ink"
       >
         Нарисовал — показать новый рисунок
       </motion.button>

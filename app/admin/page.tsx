@@ -16,7 +16,7 @@ function AdminScreen() {
         eyebrow="ATA CRM"
         title={
           <>
-            Только для <em className="italic text-champagne">админов</em>
+            Только для <span className="text-champagne">админов</span>
           </>
         }
         caption="Этот раздел доступен администраторам академии."
@@ -30,7 +30,7 @@ function AdminScreen() {
         eyebrow={`${account.superAdmin ? "Супер-админ" : "Админ"} · ${account.firstName || "ATA"}`}
         title={
           <>
-            Вся <em className="italic text-champagne">академия</em>
+            Вся <span className="text-champagne">академия</span>
           </>
         }
         caption="Заявки в закрытую школу, пользователи, тарифы и активность за сегодня."

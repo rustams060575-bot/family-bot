@@ -115,8 +115,8 @@ export default function AdminPanel() {
       <motion.div variants={stagger()} initial="hidden" animate="show" className="grid grid-cols-3 gap-2">
         {tiles.map((tile) => (
           <motion.div key={tile.label} variants={rise} className="glass p-4">
-            <p className="font-serif text-h2 font-light lining-nums tabular-nums">{tile.value ?? "—"}</p>
-            <p className="label mt-2 tracking-[0.12em]">{tile.label}</p>
+            <p className="text-title2 font-bold lining-nums tabular-nums">{tile.value ?? "—"}</p>
+            <p className="label mt-2">{tile.label}</p>
           </motion.div>
         ))}
       </motion.div>
@@ -134,7 +134,7 @@ export default function AdminPanel() {
             {applications.map((user) => (
               <motion.div key={user.id} layout="position" transition={spring} className="glass glass-accent space-y-4 p-4">
                 <div>
-                  <p className="font-sans text-body font-medium text-paper">
+                  <p className=" text-body font-medium text-paper">
                     {[user.name, user.lastName].filter(Boolean).join(" ") || "Без имени"}
                   </p>
                   <p className="text-body text-mist">
@@ -142,14 +142,14 @@ export default function AdminPanel() {
                     {trackById(user.track)?.name ?? "—"}
                   </p>
                   {user.note && <p className="mt-2 text-body text-paper/90">«{user.note}»</p>}
-                  <p className="label mt-2 tracking-[0.12em]">{shortDate(user.requestedAt)}</p>
+                  <p className="label mt-2">{shortDate(user.requestedAt)}</p>
                 </div>
                 <div className="flex gap-2">
                   <motion.button
                     {...press}
                     disabled={busyId === user.id}
                     onClick={() => act(user.id, "approve")}
-                    className="min-h-14 flex-1 rounded-2xl bg-paper px-4 font-sans text-body font-medium text-ink disabled:opacity-40"
+                    className="min-h-14 flex-1 rounded-[0.875rem] bg-paper px-4 text-headline font-semibold text-ink disabled:opacity-40"
                   >
                     Принять
                   </motion.button>
@@ -157,7 +157,7 @@ export default function AdminPanel() {
                     {...press}
                     disabled={busyId === user.id}
                     onClick={() => act(user.id, "reject")}
-                    className="min-h-14 rounded-2xl bg-tint/[0.06] px-6 font-sans text-body text-mist disabled:opacity-40"
+                    className="min-h-14 rounded-[0.875rem] bg-fill px-6 text-body font-semibold text-champagne disabled:opacity-40"
                   >
                     Отклонить
                   </motion.button>
@@ -175,7 +175,7 @@ export default function AdminPanel() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <div className="grid grid-cols-4 gap-1 rounded-full bg-tint/[0.04] p-1">
+        <div className="grid grid-cols-4 gap-1 rounded-full bg-fill p-1">
           {FILTERS.map((item) => (
             <button
               key={item.id}
@@ -186,8 +186,8 @@ export default function AdminPanel() {
               className="relative min-h-11 rounded-full"
               aria-pressed={filter === item.id}
             >
-              {filter === item.id && <motion.span layoutId="admin-filter" transition={spring} className="absolute inset-0 rounded-full bg-tint/10" />}
-              <span className={`relative font-sans text-label font-medium uppercase ${filter === item.id ? "text-paper" : "text-dim"}`}>
+              {filter === item.id && <motion.span layoutId="admin-filter" transition={spring} className="absolute inset-0 rounded-full segment-thumb" />}
+              <span className={`relative text-subhead font-medium ${filter === item.id ? "text-paper" : "text-dim"}`}>
                 {item.label}
               </span>
             </button>
@@ -213,11 +213,11 @@ export default function AdminPanel() {
                 aria-expanded={open}
                 className="flex min-h-[4.5rem] w-full items-center gap-4 p-4 text-left"
               >
-                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-tint/[0.06] font-serif text-h3 italic text-champagne">
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[0.875rem] bg-fill text-title3 font-semibold text-champagne">
                   {(user.name || "?").slice(0, 1).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-sans text-body font-medium text-paper">
+                  <span className="block truncate text-body font-medium text-paper">
                     {[user.name, user.lastName].filter(Boolean).join(" ") || "Без имени"}
                   </span>
                   <span className="block truncate text-body text-mist">
@@ -225,8 +225,8 @@ export default function AdminPanel() {
                   </span>
                 </span>
                 <span
-                  className={`shrink-0 rounded-full px-2 py-1 font-sans text-[0.64rem] font-medium uppercase tracking-[0.12em] ${
-                    user.plan === "premium" ? "bg-champagne/15 text-champagne" : "bg-tint/[0.06] text-dim"
+                  className={`shrink-0 rounded-full px-2 py-1 text-[0.64rem] font-medium uppercase ${
+                    user.plan === "premium" ? "bg-champagne/15 text-champagne" : "bg-fill text-dim"
                   }`}
                 >
                   {user.admin ? "Админ" : user.vip ? "VIP" : user.access !== "approved" ? ACCESS_LABEL[user.access] : user.plan === "premium" ? "Premium" : "Free"}
@@ -255,7 +255,7 @@ export default function AdminPanel() {
                           ["Доступ", user.admin || user.vip ? "по роли" : `${ACCESS_LABEL[user.access]}${user.decidedBy ? ` · ${user.decidedBy}` : ""}`],
                         ].map(([term, value]) => (
                           <div key={term}>
-                            <dt className="label tracking-[0.12em]">{term}</dt>
+                            <dt className="label">{term}</dt>
                             <dd className="lining-nums text-paper">{value}</dd>
                           </div>
                         ))}
@@ -265,7 +265,7 @@ export default function AdminPanel() {
                           {...press}
                           disabled={busyId === user.id}
                           onClick={() => act(user.id, "reject")}
-                          className="min-h-11 w-full font-sans text-label font-medium uppercase tracking-[0.12em] text-dim"
+                          className="min-h-11 w-full text-subhead font-medium text-dim"
                         >
                           Закрыть доступ к школе
                         </motion.button>
@@ -275,7 +275,7 @@ export default function AdminPanel() {
                           {...press}
                           disabled={busyId === user.id}
                           onClick={() => act(user.id, "approve")}
-                          className="min-h-14 w-full rounded-2xl bg-tint/[0.06] px-4 font-sans text-body text-paper disabled:opacity-40"
+                          className="min-h-14 w-full rounded-[0.875rem] bg-fill px-4 text-body text-paper disabled:opacity-40"
                         >
                           Открыть доступ
                         </motion.button>
@@ -286,7 +286,7 @@ export default function AdminPanel() {
                             {...press}
                             disabled={busyId === user.id}
                             onClick={() => act(user.id, "grant")}
-                            className="min-h-14 flex-1 rounded-2xl bg-paper px-4 font-sans text-body font-medium text-ink disabled:opacity-40"
+                            className="min-h-14 flex-1 rounded-[0.875rem] bg-paper px-4 text-headline font-semibold text-ink disabled:opacity-40"
                           >
                             {user.premiumUntil ? "Продлить на 30 дней" : "Выдать Premium · 30 дн."}
                           </motion.button>
@@ -295,7 +295,7 @@ export default function AdminPanel() {
                               {...press}
                               disabled={busyId === user.id}
                               onClick={() => act(user.id, "revoke")}
-                              className="min-h-14 rounded-2xl bg-tint/[0.06] px-4 font-sans text-body text-mist disabled:opacity-40"
+                              className="min-h-14 rounded-[0.875rem] bg-fill px-4 text-body font-semibold text-champagne disabled:opacity-40"
                             >
                               Снять
                             </motion.button>

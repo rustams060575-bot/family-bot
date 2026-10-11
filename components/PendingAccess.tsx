@@ -44,20 +44,20 @@ export default function PendingAccess() {
         <ThemeToggle />
       </motion.div>
 
-      <motion.h1 variants={rise} className="mt-8 font-serif text-display font-light">
+      <motion.h1 variants={rise} className="mt-8 text-large-title font-bold">
         {rejected ? (
           <>
-            Заявка <em className="italic text-champagne">не одобрена</em>
+            Заявка <span className="text-champagne">не одобрена</span>
           </>
         ) : (
           <>
             {account.firstName ? `${account.firstName}, ` : ""}
-            <em className="italic text-champagne">заявка отправлена</em>
+            <span className="text-champagne">заявка отправлена</span>
           </>
         )}
       </motion.h1>
 
-      <motion.p variants={rise} className="mt-6 max-w-[22rem] text-lead text-mist">
+      <motion.p variants={rise} className="mt-6 max-w-[22rem] text-headline text-mist">
         {rejected
           ? canReapply
             ? "Можно отправить заявку ещё раз."
@@ -83,7 +83,7 @@ export default function PendingAccess() {
           <motion.button
             {...press}
             onClick={reapply}
-            className="min-h-14 w-full rounded-2xl bg-paper px-6 font-sans text-body font-medium text-ink"
+            className="min-h-14 w-full rounded-[0.875rem] bg-paper px-6 text-headline font-semibold text-ink"
           >
             Отправить заявку снова
           </motion.button>
@@ -92,7 +92,7 @@ export default function PendingAccess() {
             {...press}
             onClick={check}
             disabled={checking}
-            className="min-h-14 w-full rounded-2xl bg-tint/[0.06] px-6 font-sans text-body text-paper disabled:opacity-50"
+            className="min-h-14 w-full rounded-[0.875rem] bg-fill px-6 text-body text-paper disabled:opacity-50"
           >
             {checking ? "Проверяем…" : "Проверить статус"}
           </motion.button>

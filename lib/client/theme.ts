@@ -8,7 +8,7 @@ const THEME_KEY = "ata-theme";
 const TEXT_KEY = "ata-text";
 
 // Цвет шапки и фона Telegram под каждую тему — совпадает с --ink.
-export const THEME_INK: Record<Theme, `#${string}`> = { dark: "#0B0F17", light: "#F6F5F1" };
+export const THEME_INK: Record<Theme, `#${string}`> = { dark: "#000000", light: "#F2F2F7" };
 
 function read(key: string) {
   try {

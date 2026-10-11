@@ -7,10 +7,10 @@ import {
   requireAccess,
   unauthorized,
 } from "@/lib/server/session";
-import { displayName, isVip, recordActivity, refund } from "@/lib/store.mjs";
+import { displayName, isKid, isVip, recordActivity, refund } from "@/lib/store.mjs";
 import { findStudent, recentLessonsText } from "@/lib/crm.mjs";
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
-import { crmPrompt, topicPrompt, voicePrompt } from "@/lib/prompts.mjs";
+import { crmPrompt, kidsPrompt, textPrompt, voicePrompt } from "@/lib/prompts.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 
 export const runtime = "nodejs";
@@ -47,21 +47,24 @@ export async function POST(request: Request) {
   const messages = sanitizeHistory(body?.messages);
   if (messages.at(-1)?.role !== "user") return badRequest("Нет реплики пользователя.");
 
-  const persona = { name: displayName(account), vip: isVip(account) };
+  const kid = isKid(account);
+  const persona = { name: displayName(account), vip: isVip(account), kid };
+  const language = track === "spanish" || track === "english";
   let system: string | null = null;
   if (track === "crm") {
     // План занятия для ученика из CRM владельца; чужой studentId просто не найдётся.
     const student = findStudent(account, String(body?.studentId ?? ""));
     if (student) system = crmPrompt({ ...student, recent: recentLessonsText(student) }, account.role, persona);
-  } else if (mode === "voice") {
-    if (track === "spanish" || track === "english") system = voicePrompt(track, topic, account.role, persona);
-  } else {
-    system = topicPrompt(track, topic, account.role, persona);
+  } else if (language && kid) {
+    // Детский режим: один игровой сценарий на любую тему, голосом и текстом.
+    system = kidsPrompt(track, persona);
+  } else if (language) {
+    system = (mode === "voice" ? voicePrompt : textPrompt)(track, topic, account.role, persona);
   }
   if (!system) return badRequest("Неизвестный трек или тема.");
 
   // Слова, которые Whisper распознал неуверенно, — подсказка модели про произношение.
-  if (mode === "voice" && Array.isArray(body?.uncertain) && body.uncertain.length) {
+  if (mode === "voice" && !kid && Array.isArray(body?.uncertain) && body.uncertain.length) {
     const last = messages.at(-1)!;
     last.content += `\n\n(неуверенно распознанные фрагменты: ${body.uncertain
       .slice(0, 5)
@@ -74,19 +77,26 @@ export async function POST(request: Request) {
 
   try {
     const reply = await groqChat([{ role: "system", content: system }, ...messages], `app chat ${account.id}`, {
-      maxTokens: mode === "voice" ? 700 : 1200,
-      json: mode === "voice",
+      maxTokens: mode === "voice" || kid ? 700 : 1200,
+      json: language,
     });
 
     recordActivity(account);
-    if (mode === "text") return NextResponse.json({ reply });
+    if (!language) return NextResponse.json({ reply });
 
-    const parsed = parseJsonReply(reply);
+    // Модель изредка ломает JSON — тогда показываем её текст как есть, а не ошибку.
+    let parsed: any;
+    try {
+      parsed = parseJsonReply(reply);
+    } catch {
+      parsed = { reply };
+    }
     return NextResponse.json({
-      reply: String(parsed.reply ?? ""),
+      reply: String(parsed.reply ?? "").trim() || reply,
       translation: String(parsed.translation ?? ""),
-      corrections: Array.isArray(parsed.corrections) ? parsed.corrections.slice(0, 3) : [],
-      pronunciation: String(parsed.pronunciation ?? ""),
+      corrections: !kid && Array.isArray(parsed.corrections) ? parsed.corrections.slice(0, 3) : [],
+      pronunciation: kid ? "" : String(parsed.pronunciation ?? ""),
+      choices: Array.isArray(parsed.choices) ? parsed.choices.map(String).filter(Boolean).slice(0, 3) : [],
     });
   } catch (error) {
     refund(account, "ai");

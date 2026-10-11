@@ -14,8 +14,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fontsource/cormorant-garamond": "^5.3.0",
-    "@fontsource/inter-tight": "^5.3.0",
     "@twa-dev/sdk": "^8.0.2",
     "@types/node": "^20.19.43",
     "@types/react": "^18.3.31",

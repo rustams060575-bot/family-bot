@@ -9,6 +9,8 @@ export type Account = {
   plan: Plan;
   // VIP (Атахан и др.): Premium без оплаты и срока, персональный тон ассистента.
   vip: boolean;
+  // Детский профиль (Атахан): Мартина в игровом режиме, SF Pro Rounded, без исправлений.
+  kid: boolean;
   // Администратор школы: доступ к /admin. Супер-админ (@r_design_space) получает заявки.
   admin: boolean;
   superAdmin: boolean;

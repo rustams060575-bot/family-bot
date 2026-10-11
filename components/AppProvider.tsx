@@ -20,7 +20,7 @@ import {
 } from "@/lib/client/theme";
 import SubscriptionCard from "@/components/SubscriptionCard";
 
-type Haptic = "light" | "medium" | "selection" | "success" | "error";
+type Haptic = "light" | "medium" | "selection" | "success" | "warning" | "error";
 
 type AppContextValue = {
   status: "loading" | "ready" | "error";
@@ -170,7 +170,7 @@ export default function AppProvider({ children }: { children: React.ReactNode })
     if (!feedback || !webAppRef.current?.isVersionAtLeast("6.1")) return;
     try {
       if (kind === "selection") feedback.selectionChanged();
-      else if (kind === "success" || kind === "error") feedback.notificationOccurred(kind);
+      else if (kind === "success" || kind === "warning" || kind === "error") feedback.notificationOccurred(kind);
       else feedback.impactOccurred(kind);
     } catch {
       // хаптика — приятное дополнение, не критично
@@ -234,7 +234,7 @@ export default function AppProvider({ children }: { children: React.ReactNode })
             <motion.div key="paywall" className="fixed inset-0 z-50 flex items-end">
               <motion.button
                 aria-label="Закрыть"
-                className="absolute inset-0 bg-black/60"
+                className="absolute inset-0 bg-black/40"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1, transition: enter }}
                 exit={{ opacity: 0, transition: exit }}
@@ -243,7 +243,7 @@ export default function AppProvider({ children }: { children: React.ReactNode })
               <motion.div
                 role="dialog"
                 aria-modal="true"
-                className="relative w-full px-4 pb-safe"
+                className="relative w-full rounded-t-[1.25rem] bg-ink px-4 pb-safe pt-2"
                 initial={{ y: "100%" }}
                 animate={{ y: 0, transition: softSpring }}
                 exit={{ y: "100%", transition: exit }}
@@ -254,7 +254,7 @@ export default function AppProvider({ children }: { children: React.ReactNode })
                   if (info.offset.y > 96 || info.velocity.y > 600) setPaywall(null);
                 }}
               >
-                <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-tint/20" />
+                <div className="mx-auto mb-4 h-[0.3125rem] w-9 rounded-full bg-tint/20" />
                 {paywall && <p className="mb-4 px-2 text-center text-body text-mist">{paywall}</p>}
                 <div className="pb-4">
                   <SubscriptionCard onClose={() => setPaywall(null)} />

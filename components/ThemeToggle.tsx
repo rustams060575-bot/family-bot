@@ -10,7 +10,7 @@ export default function ThemeToggle() {
   const { theme, setThemePref, haptic } = useApp();
 
   return (
-    <div className="glass flex p-1" role="radiogroup" aria-label="Тема оформления">
+    <div className="flex rounded-full bg-fill p-0.5" role="radiogroup" aria-label="Тема оформления">
       {(["light", "dark"] as const).map((value) => {
         const active = theme === value;
         return (
@@ -24,9 +24,9 @@ export default function ThemeToggle() {
               haptic("selection");
               setThemePref(value);
             }}
-            className="relative grid h-11 w-11 place-items-center rounded-full"
+            className="relative grid h-10 w-11 place-items-center rounded-full"
           >
-            {active && <motion.span layoutId="theme-thumb" transition={spring} className="absolute inset-1 rounded-full bg-tint/10" />}
+            {active && <motion.span layoutId="theme-thumb" transition={spring} className="absolute inset-0.5 rounded-full segment-thumb" />}
             <svg
               width="18"
               height="18"

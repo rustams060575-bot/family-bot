@@ -25,11 +25,11 @@ function Segmented<T extends string | number>({
 }) {
   return (
     <div>
-      <div className="-mx-2 flex flex-wrap gap-1">
+      <div className="inline-flex flex-wrap gap-0.5 rounded-full bg-fill p-0.5">
         {options.map((option) => (
           <button key={String(option.value)} onClick={() => onChange(option.value)} className="relative min-h-11 rounded-full px-4">
-            {value === option.value && <motion.span layoutId={id} transition={spring} className="absolute inset-0 rounded-full bg-tint/10" />}
-            <span className={`relative font-sans text-label font-medium uppercase tracking-[0.12em] ${value === option.value ? "text-paper" : "text-dim"}`}>
+            {value === option.value && <motion.span layoutId={id} transition={spring} className="absolute inset-0 rounded-full segment-thumb" />}
+            <span className={`relative text-subhead font-medium ${value === option.value ? "text-paper" : "text-dim"}`}>
               {option.label}
             </span>
           </button>
@@ -62,7 +62,7 @@ function Profile() {
         eyebrow="Профиль"
         title={
           <>
-            Ваш <em className="italic text-champagne">ритм</em>
+            Ваш <span className="text-champagne">ритм</span>
           </>
         }
       />
@@ -75,7 +75,7 @@ function Profile() {
               {account.streak.activeToday ? "Сегодня занятие засчитано" : "Одно занятие сегодня — и серия растёт"}
             </p>
           </div>
-          <span className="font-serif text-display font-light lining-nums tabular-nums leading-none">{account.streak.count}</span>
+          <span className="text-large-title font-bold lining-nums tabular-nums leading-none">{account.streak.count}</span>
         </motion.div>
 
         <motion.div variants={rise}>
@@ -145,13 +145,13 @@ function Profile() {
                 role="switch"
                 aria-checked={account.reminders.enabled}
                 onClick={() => save({ remindersEnabled: !account.reminders.enabled })}
-                className={`relative h-8 w-14 rounded-full transition-colors duration-300 ease-out-expo ${
-                  account.reminders.enabled ? "bg-champagne/80" : "bg-tint/10"
+                className={`relative h-[1.9375rem] w-[3.1875rem] shrink-0 rounded-full transition-colors duration-300 ease-out-expo ${
+                  account.reminders.enabled ? "bg-champagne" : "bg-fill"
                 }`}
               >
                 <motion.span
-                  className="absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm"
-                  animate={{ left: account.reminders.enabled ? 28 : 4 }}
+                  className="absolute top-0.5 h-[1.6875rem] w-[1.6875rem] rounded-full bg-white shadow-[0_3px_8px_rgb(0_0_0/0.15),0_3px_1px_rgb(0_0_0/0.06)]"
+                  animate={{ left: account.reminders.enabled ? 22 : 2 }}
                   transition={spring}
                 />
               </button>

@@ -17,8 +17,8 @@ function Meter({ label, used, limit }: { label: string; used: number; limit: num
     return (
       <div className="flex items-baseline justify-between gap-4">
         <span className="label">{label}</span>
-        <span className="whitespace-nowrap font-sans text-label lining-nums tabular-nums text-mist">
-          {used} · <span className="font-serif text-lead italic normal-case text-champagne">без лимита</span>
+        <span className="whitespace-nowrap text-footnote lining-nums tabular-nums text-mist">
+          {used} · <span className="text-headline font-semibold text-champagne">без лимита</span>
         </span>
       </div>
     );
@@ -29,11 +29,11 @@ function Meter({ label, used, limit }: { label: string; used: number; limit: num
     <div>
       <div className="mb-2 flex items-baseline justify-between">
         <span className="label">{label}</span>
-        <span className={`font-sans text-label lining-nums tabular-nums ${exhausted ? "text-champagne" : "text-mist"}`}>
+        <span className={` text-footnote lining-nums tabular-nums ${exhausted ? "text-champagne" : "text-mist"}`}>
           {used} / {limit}
         </span>
       </div>
-      <div className="h-1 overflow-hidden rounded-full bg-tint/[0.06]">
+      <div className="h-1 overflow-hidden rounded-full bg-fill">
         <motion.div
           className={`h-full rounded-full ${exhausted ? "bg-champagne" : "bg-paper/70"}`}
           initial={{ width: 0 }}
@@ -112,22 +112,22 @@ export default function SubscriptionCard({ variant = "full", onClose }: Props) {
       <motion.div variants={rise} className="flex items-center justify-between">
         <span className="label">Тариф</span>
         <span
-          className={`rounded-full px-4 py-1 font-sans text-label font-medium uppercase ${
-            premium ? "bg-champagne/15 text-champagne" : "bg-tint/[0.06] text-mist"
+          className={`rounded-full px-4 py-1 text-subhead font-medium ${
+            premium ? "bg-champagne/15 text-champagne" : "bg-fill text-mist"
           }`}
         >
           {account.vip ? "Premium · VIP" : premium ? "Premium" : "Free"}
         </span>
       </motion.div>
 
-      <motion.h3 variants={rise} className="mt-4 font-serif text-h2 font-light">
+      <motion.h3 variants={rise} className="mt-4 text-title2 font-bold">
         {premium ? (
           <>
-            Premium <em className="italic text-champagne">активен</em>
+            Premium <span className="text-champagne">активен</span>
           </>
         ) : (
           <>
-            ATA <em className="italic text-champagne">Premium</em>
+            ATA <span className="text-champagne">Premium</span>
           </>
         )}
       </motion.h3>
@@ -160,13 +160,13 @@ export default function SubscriptionCard({ variant = "full", onClose }: Props) {
             {...press}
             disabled={!offer.priceStars || paying}
             onClick={upgrade}
-            className="mt-6 flex w-full items-center justify-between rounded-2xl bg-paper px-6 py-4 text-ink disabled:opacity-50"
+            className="mt-6 flex w-full items-center justify-between rounded-[0.875rem] bg-paper px-6 py-4 text-ink disabled:opacity-50"
           >
-            <span className="font-sans text-body font-medium">
+            <span className="text-body font-medium">
               {paying ? "Открываем оплату…" : offer.priceStars ? "Оформить Premium" : "Оплата скоро"}
             </span>
             {offer.priceStars && (
-              <span className="font-sans text-body lining-nums tabular-nums text-ink/70">
+              <span className="text-body lining-nums tabular-nums text-ink/70">
                 {offer.priceStars} ⭐ · {offer.days} дн.
               </span>
             )}

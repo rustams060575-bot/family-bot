@@ -55,9 +55,9 @@ function shortDate(iso: string) {
   return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
 
-const chip = "min-h-11 rounded-full px-4 font-sans text-label font-medium uppercase tracking-[0.12em]";
-const primaryButton = "min-h-14 w-full rounded-2xl bg-paper px-6 font-sans text-body font-medium text-ink disabled:opacity-40";
-const quietButton = "min-h-14 rounded-2xl bg-tint/[0.06] px-6 font-sans text-body text-mist disabled:opacity-40";
+const chip = "min-h-11 rounded-full px-4 text-subhead font-medium";
+const primaryButton = "min-h-14 w-full rounded-[0.875rem] bg-paper px-6 text-headline font-semibold text-ink disabled:opacity-40";
+const quietButton = "min-h-14 rounded-[0.875rem] bg-fill px-6 text-body font-semibold text-champagne disabled:opacity-40";
 
 export default function CrmPanel() {
   const { account, haptic, handleError, refresh } = useApp();
@@ -116,8 +116,8 @@ export default function CrmPanel() {
           { value: stats.subjects, label: plural(stats.subjects, ["предмет", "предмета", "предметов"]) },
         ].map((tile) => (
           <motion.div key={tile.label} variants={rise} className="glass p-4">
-            <p className="font-serif text-h2 font-light lining-nums tabular-nums">{students === null ? "—" : tile.value}</p>
-            <p className="label mt-2 tracking-[0.12em]">{tile.label}</p>
+            <p className="text-title2 font-bold lining-nums tabular-nums">{students === null ? "—" : tile.value}</p>
+            <p className="label mt-2">{tile.label}</p>
           </motion.div>
         ))}
       </motion.div>
@@ -217,14 +217,14 @@ function StudentForm({
       />
       <div>
         <input className="field" placeholder="Предмет — любой" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={60} />
-        <div className="no-scrollbar -mx-6 mt-2 overflow-x-auto px-6">
+        <div className="no-scrollbar -mx-4 mt-2 overflow-x-auto px-4">
           <div className="flex w-max gap-2">
             {SUBJECT_HINTS.map((hint) => (
               <button
                 type="button"
                 key={hint}
                 onClick={() => setSubject(hint)}
-                className={`${chip} ${subject === hint ? "bg-paper text-ink" : "bg-tint/[0.06] text-mist"}`}
+                className={`${chip} ${subject === hint ? "bg-paper text-ink" : "bg-fill text-mist"}`}
               >
                 {hint}
               </button>
@@ -291,16 +291,16 @@ function StudentCard({
   return (
     <motion.div layout="position" transition={spring} className="glass overflow-hidden">
       <button onClick={onToggle} className="flex min-h-[4.5rem] w-full items-center gap-4 p-4 text-left" aria-expanded={open}>
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-tint/[0.06] font-serif text-h3 italic text-champagne">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[0.875rem] bg-fill text-title3 font-semibold text-champagne">
           {student.name.slice(0, 1).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-sans text-body font-medium text-paper">{student.name}</span>
+          <span className="block truncate text-body font-medium text-paper">{student.name}</span>
           <span className="block truncate text-body text-mist">{meta}</span>
         </span>
         <span className="text-right">
-          <span className="block font-serif text-lead lining-nums tabular-nums">{student.lessons.length}</span>
-          <span className="label block text-[0.64rem] tracking-[0.12em]">{last ? shortDate(last.date) : "нет занятий"}</span>
+          <span className="block text-headline font-semibold lining-nums tabular-nums">{student.lessons.length}</span>
+          <span className="label block text-[0.64rem]">{last ? shortDate(last.date) : "нет занятий"}</span>
         </span>
       </button>
 
@@ -333,7 +333,7 @@ function StudentCard({
                       initial="hidden"
                       animate="show"
                       exit="leave"
-                      className="mt-4 whitespace-pre-wrap rounded-2xl bg-tint/[0.04] p-4 text-body text-paper"
+                      className="mt-4 whitespace-pre-wrap rounded-2xl bg-fill p-4 text-body text-paper"
                     >
                       {plan}
                     </motion.p>
@@ -356,7 +356,7 @@ function StudentCard({
                 <p className="label">Записать занятие</p>
                 <input className="field" placeholder="Тема занятия" value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={120} />
                 <input className="field" placeholder="Заметка (необязательно)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={400} />
-                <div className="grid grid-cols-3 gap-1 rounded-full bg-tint/[0.04] p-1">
+                <div className="grid grid-cols-3 gap-1 rounded-full bg-fill p-1">
                   {MOODS.map((item) => (
                     <button
                       type="button"
@@ -366,9 +366,9 @@ function StudentCard({
                       aria-pressed={mood === item.id}
                     >
                       {mood === item.id && (
-                        <motion.span layoutId={`mood-${student.id}`} transition={spring} className="absolute inset-0 rounded-full bg-tint/10" />
+                        <motion.span layoutId={`mood-${student.id}`} transition={spring} className="absolute inset-0 rounded-full segment-thumb" />
                       )}
-                      <span className={`relative font-sans text-label font-medium uppercase ${mood === item.id ? "text-paper" : "text-dim"}`}>
+                      <span className={`relative text-subhead font-medium ${mood === item.id ? "text-paper" : "text-dim"}`}>
                         {item.label}
                       </span>
                     </button>
@@ -384,12 +384,12 @@ function StudentCard({
                   <p className="label mb-2">Журнал</p>
                   <ul className="space-y-2">
                     {student.lessons.slice(0, 20).map((lesson) => (
-                      <li key={lesson.id} className="flex items-start gap-4 rounded-2xl bg-tint/[0.03] p-4">
-                        <span className="w-12 shrink-0 font-sans text-label text-dim">{shortDate(lesson.date)}</span>
+                      <li key={lesson.id} className="flex items-start gap-4 rounded-2xl bg-fill p-4">
+                        <span className="w-12 shrink-0 text-footnote text-dim">{shortDate(lesson.date)}</span>
                         <span className="min-w-0 flex-1 text-body">
                           <span className="block text-paper">{lesson.topic}</span>
                           {lesson.note && <span className="block text-mist">{lesson.note}</span>}
-                          <span className="label mt-1 block tracking-[0.12em]">{MOODS.find((m) => m.id === lesson.mood)?.label}</span>
+                          <span className="label mt-1 block">{MOODS.find((m) => m.id === lesson.mood)?.label}</span>
                         </span>
                         <button
                           onClick={() => mutate({ action: "unlog", studentId: student.id, lessonId: lesson.id })}
@@ -416,7 +416,7 @@ function StudentCard({
                   }
                   mutate({ action: "remove", studentId: student.id });
                 }}
-                className={`min-h-11 w-full font-sans text-label font-medium uppercase tracking-[0.12em] ${
+                className={`min-h-11 w-full text-subhead font-medium ${
                   confirmDelete ? "text-danger" : "text-dim"
                 }`}
               >
