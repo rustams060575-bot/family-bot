@@ -43,8 +43,7 @@ function configurationProblems() {
   if (process.env.RAILWAY_ENVIRONMENT && !process.env.DATA_DIR) {
     problems.push("DATA_DIR не задан — без Railway Volume профили и заявки стираются при каждом деплое");
   }
-  if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) problems.push("нет ключа Vision — разбор рисунков выключен");
-  else if (!process.env.GEMINI_API_KEY) problems.push("GEMINI_API_KEY не задан — разбор рисунков идёт только через OpenAI");
+  if (!process.env.GEMINI_API_KEY) problems.push("GEMINI_API_KEY не задан — разбор рисунков идёт только через Groq Vision");
   return problems;
 }
 

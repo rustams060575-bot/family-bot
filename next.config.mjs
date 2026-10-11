@@ -4,7 +4,7 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     // SDK провайдеров и Telegraf работают на сервере как есть, без бандлинга.
-    serverComponentsExternalPackages: ["groq-sdk", "openai", "telegraf"],
+    serverComponentsExternalPackages: ["groq-sdk", "telegraf"],
   },
 };
 

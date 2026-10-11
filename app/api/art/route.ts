@@ -39,7 +39,7 @@ async function handle(request: Request) {
   const denied = requireAccess(account);
   if (denied) return denied;
   if (!visionProvider()) {
-    console.error(`[Vision] отказ до запроса (user ${account.id}): нет ни GEMINI_API_KEY, ни OPENAI_API_KEY`);
+    console.error(`[Vision] отказ до запроса (user ${account.id}): нет ни GEMINI_API_KEY, ни GROQ_API_KEY`);
     return NextResponse.json(
       { error: "vision_unavailable", message: "Анализ рисунков ещё не подключён." },
       { status: 503 },

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import DrawingCanvas, { type DrawingCanvasHandle } from "@/components/DrawingCanvas";
-import { ApiError, apiJson } from "@/lib/client/api";
+import { ApiError, apiFetch } from "@/lib/client/api";
 import { martinaGreeting } from "@/lib/client/tracks";
 import SpeakButton from "@/components/SpeakButton";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
@@ -23,6 +23,8 @@ type Source = "photo" | "canvas";
 // а для разбора цветов и деталей детского рисунка этого достаточно.
 const MAX_SIDE = 1024;
 const JPEG_QUALITY = 0.8;
+// Сервер перебирает модели не дольше ~50 с (Gemini 35 с + Groq 15 с) — дольше не ждём.
+const REQUEST_TIMEOUT_MS = 60000;
 const SENDABLE = ["image/jpeg", "image/png", "image/webp"];
 
 // Мягкие реплики Мартины вместо системных ошибок.
@@ -137,7 +139,12 @@ export default function ArtAnalyzer() {
     try {
       const form = new FormData();
       form.append("image", blob, "drawing.jpg");
-      const result = await apiJson<Analysis>("/api/art", form);
+      const response = await apiFetch("/api/art", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      const result: Analysis = await response.json();
       setAnalysis(result);
       setStatus("done");
       haptic("success");
