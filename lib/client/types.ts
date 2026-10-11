@@ -33,7 +33,7 @@ export type Offer = {
   limits: Record<Plan, { ai: number | null; art: null }>;
 };
 
-export type Features = { tts: boolean; vision: boolean };
+export type Features = { vision: boolean };
 
 export type Lesson = { id: string; date: string; topic: string; note: string; mood: "great" | "ok" | "hard" };
 

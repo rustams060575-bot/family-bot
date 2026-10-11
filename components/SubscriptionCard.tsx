@@ -61,7 +61,6 @@ export default function SubscriptionCard({ variant = "full", onClose }: Props) {
     premiumAi === null
       ? `Занятия с ИИ без лимита — вместо ${offer.limits.free.ai} в день`
       : `${premiumAi} занятий с ИИ в день вместо ${offer.limits.free.ai}`,
-    "Живой голос репетитора OpenAI вместо системного голоса телефона",
     "Заморозка стрика: один пропущенный день в неделю не обнуляет серию",
   ];
 

@@ -1,8 +1,5 @@
-// Аудио-движок голосового репетитора: запись микрофона (MediaRecorder) и
-// воспроизведение голоса ИИ идут через один AudioContext с анализатором — так одна
-// и та же волна показывает и речь ученика, и голос репетитора. Контекст создаётся
-// по жесту пользователя: в iOS WebView это единственный способ потом проиграть звук,
-// пришедший асинхронно (после запросов к API), без блокировки автовоспроизведения.
+// Аудио-движок голосового занятия: запись микрофона (MediaRecorder) с анализатором для
+// волны. Контекст создаётся по жесту пользователя — иначе iOS WebView его не запустит.
 
 // iOS (Telegram WebView и Safari) пишет только mp4/AAC — он идёт первым, если поддержан:
 // так запись гарантированно читается Whisper. Chrome и Android берут webm/opus.
@@ -15,7 +12,6 @@ export class AudioEngine {
   private micSource: MediaStreamAudioSourceNode | null = null;
   private recorder: MediaRecorder | null = null;
   private chunks: Blob[] = [];
-  private playing: AudioBufferSourceNode | null = null;
   private levels: Uint8Array<ArrayBuffer> = new Uint8Array(new ArrayBuffer(0));
 
   // Вызывать синхронно внутри обработчика нажатия.
@@ -53,7 +49,6 @@ export class AudioEngine {
 
   async startRecording() {
     this.unlock();
-    this.stopPlayback();
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
@@ -88,35 +83,7 @@ export class AudioEngine {
     });
   }
 
-  async play(data: ArrayBuffer, onEnd?: () => void) {
-    this.unlock();
-    this.stopPlayback();
-    const buffer = await this.context!.decodeAudioData(data);
-    const source = this.context!.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.analyser!);
-    this.analyser!.connect(this.context!.destination);
-    source.onended = () => {
-      this.analyser?.disconnect();
-      if (this.playing === source) this.playing = null;
-      onEnd?.();
-    };
-    this.playing = source;
-    source.start();
-  }
-
-  stopPlayback() {
-    if (!this.playing) return;
-    try {
-      this.playing.stop();
-    } catch {
-      // уже остановлен
-    }
-    this.playing = null;
-  }
-
   dispose() {
-    this.stopPlayback();
     if (this.recorder && this.recorder.state !== "inactive") this.recorder.stop();
     this.stream?.getTracks().forEach((track) => track.stop());
     this.context?.close();
@@ -124,11 +91,18 @@ export class AudioEngine {
   }
 }
 
-// Запасной голос: системный синтез речи устройства — когда нет OPENAI_API_KEY,
-// тариф Free или OpenAI не ответил. Предпочитаем женские голоса нужного языка.
-// Любой сбой здесь не показывается пользователю ошибкой: озвучка просто завершается.
-const FEMALE_HINTS =
-  /(female|samantha|monica|paulina|google español|google us english|karen|moira|tessa|victoria|milena|alena|nova)/i;
+// Голос Мартины: бесплатный системный синтез речи устройства (Web Speech API), без
+// платных сервисов. Тёплый женский голос: русский — для русских реплик, голос изучаемого
+// языка — для фраз на английском или испанском. Любой сбой не показывается ошибкой:
+// озвучка просто завершается.
+
+// Лучшие известные женские голоса по платформам: iOS/macOS (Milena, Katya), Android/Chrome
+// (Google русский), Windows (Svetlana, Dariya), плюс женские голоса для en/es.
+const PREFERRED_VOICES =
+  /(milena|katya|google русский|svetlana|dariya|irina|alena|female|samantha|karen|moira|tessa|victoria|monica|paulina|google español|google us english)/i;
+// Мягкая, ласковая подача: чуть медленнее и чуть выше обычного.
+const RATE = 0.92;
+const PITCH = 1.08;
 
 // В Chrome и Android WebView список голосов приходит асинхронно — ждём его до 800 мс.
 function loadVoices(): Promise<SpeechSynthesisVoice[]> {
@@ -145,6 +119,45 @@ function loadVoices(): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
+function pickVoice(voices: SpeechSynthesisVoice[], lang: string) {
+  const base = lang.slice(0, 2).toLowerCase();
+  const matching = voices.filter((voice) => voice.lang.replace("_", "-").toLowerCase().startsWith(base));
+  // Улучшенные (Enhanced/Premium) версии звучат заметно естественнее — берём их первыми.
+  const score = (voice: SpeechSynthesisVoice) =>
+    (PREFERRED_VOICES.test(voice.name) ? 2 : 0) + (/enhanced|premium|natural|neural/i.test(voice.name) ? 1 : 0);
+  return matching.sort((a, b) => score(b) - score(a))[0] ?? null;
+}
+
+// Длинные реплики Chrome обрывает примерно на 15-й секунде — говорим по предложениям.
+function splitSentences(text: string) {
+  return (text.match(/[^.!?…]+[.!?…]*\s*/g) ?? [text]).map((part) => part.trim()).filter(Boolean);
+}
+
+let primed = false;
+
+// iOS разрешает синтез речи только после жеста пользователя. Вызывать синхронно в
+// обработчике нажатия: пустая фраза «разблокирует» голос для последующих ответов,
+// которые приходят асинхронно после запроса к ИИ.
+export function primeSpeech() {
+  if (primed || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  primed = true;
+  try {
+    const silent = new SpeechSynthesisUtterance(" ");
+    silent.volume = 0;
+    window.speechSynthesis.speak(silent);
+  } catch {
+    // не критично: озвучка просто начнётся со следующего нажатия
+  }
+}
+
+export function stopSpeech() {
+  try {
+    window.speechSynthesis?.cancel();
+  } catch {
+    // нечего останавливать
+  }
+}
+
 export async function speakWithBrowser(text: string, lang: string, onEnd?: () => void) {
   let finished = false;
   const finish = () => {
@@ -156,16 +169,22 @@ export async function speakWithBrowser(text: string, lang: string, onEnd?: () =>
     if (!("speechSynthesis" in window)) return finish();
     const synth = window.speechSynthesis;
     synth.cancel();
-    const voices = (await loadVoices()).filter((voice) => voice.lang.replace("_", "-").startsWith(lang.slice(0, 2)));
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    utterance.rate = 0.95;
-    utterance.voice = voices.find((voice) => FEMALE_HINTS.test(voice.name)) ?? voices[0] ?? null;
-    utterance.onend = finish;
-    utterance.onerror = finish;
-    synth.speak(utterance);
+    const voice = pickVoice(await loadVoices(), lang);
+    const parts = splitSentences(text);
+    parts.forEach((part, index) => {
+      const utterance = new SpeechSynthesisUtterance(part);
+      utterance.lang = voice?.lang ?? lang;
+      utterance.voice = voice;
+      utterance.rate = RATE;
+      utterance.pitch = PITCH;
+      if (index === parts.length - 1) {
+        utterance.onend = finish;
+        utterance.onerror = finish;
+      }
+      synth.speak(utterance);
+    });
     // Страховка: некоторые WebView не присылают onend — снимаем состояние «говорит» сами.
-    setTimeout(finish, Math.max(4000, text.length * 120));
+    setTimeout(finish, Math.max(4000, text.length * 110));
   } catch {
     finish();
   }

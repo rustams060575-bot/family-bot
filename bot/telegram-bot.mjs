@@ -19,10 +19,21 @@ import { personaLine } from "../lib/prompts.mjs";
 import { applicationText, notifyDecision } from "../lib/notify.mjs";
 import { telegramBotToken } from "../lib/telegram-auth.mjs";
 import { startReminders } from "./reminders.mjs";
+import {
+  ABOUT_ACTION,
+  MAIN_MENU,
+  MENU_OPEN,
+  MENU_PROFILE,
+  aboutText,
+  openKeyboard,
+  profileKeyboard,
+  profileText,
+  sendWelcome,
+} from "./welcome.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Telegram-бот ATA Academy («Ата AI»): точка входа в Mini App (кнопка на /start, кнопка
+// Telegram-бот ATA Academy (наставник Мартина): точка входа в Mini App (кнопка на /start, кнопка
 // меню и /app), заявки в закрытую школу, оплата Premium в Telegram Stars, ежедневные
 // напоминания и ИИ-ассистент в чате для участников школы.
 const USERS_FILE = path.join(DATA_DIR, "users.json");
@@ -39,7 +50,7 @@ const VOICE_STUB_MESSAGE =
 const systemInstruction = fs.readFileSync(SYSTEM_PROMPT_FILE, "utf-8");
 // Версия личности бота. Истории, накопленные под другой версией (например, старым
 // «узбекским переводчиком»), сбрасываются — иначе модель продолжает их стиль.
-const PERSONA_VERSION = "ata-ai-1";
+const PERSONA_VERSION = "martina-1";
 
 // URL Mini App: явно через WEBAPP_URL, иначе публичный домен Railway (появляется после
 // Settings → Networking → Generate Domain). Telegram принимает в web_app только https —
@@ -195,23 +206,11 @@ ${persona}` : systemInstruction;
 
 const APP_NOT_PUBLISHED = "Приложение ATA Academy ещё не опубликовано — администратор скоро это исправит.";
 
-function startText(account) {
-  const name = displayName(account);
-  const hello = `${name ? `${name}, з` : "З"}дравствуйте! Я — Ата AI, ассистент ATA Academy.`;
-  const body =
-    accessStatus(account) === "approved"
-      ? "Испанский, английский, рисование и переводчик — в приложении: нажмите «Открыть ATA Academy». " +
-        "А здесь можно просто задать вопрос или прислать фразу для перевода."
-      : "ATA Academy — закрытая школа. Откройте приложение, выберите роль и трек — " +
-        "заявка уйдёт администратору, ответ придёт сюда.";
-  return `${hello}\n\n${body}${webAppUrl() ? "" : `\n\n${APP_NOT_PUBLISHED}`}`;
-}
-
 function joinText(account) {
   const status = accessStatus(account);
   if (status === "pending") return "Ваша заявка в ATA Academy на рассмотрении — ответ придёт сюда, в этот чат.";
   if (status === "rejected") return "Заявка пока не одобрена. Повторно её можно отправить в приложении через сутки.";
-  return "ATA Academy — закрытая школа. Чтобы общаться с Ата AI, откройте приложение и отправьте заявку.";
+  return "ATA Academy — закрытая школа. Чтобы общаться с Мартиной, откройте приложение и отправьте заявку.";
 }
 
 function openAppKeyboard() {
@@ -270,10 +269,27 @@ function registerHandlers(bot) {
     const chatId = String(ctx.chat.id);
     users[chatId] = { history: [], personaVersion: PERSONA_VERSION };
     saveUsers();
-    await ctx.reply(startText(getAccount(ctx.from.id)), openAppKeyboard());
+    // Красивый вход: баннер, описание, инлайн-кнопки и постоянное нижнее меню.
+    await sendWelcome(ctx, getAccount(ctx.from.id), webAppUrl());
   });
 
-  bot.command("app", (ctx) => ctx.reply(webAppUrl() ? "ATA Academy:" : APP_NOT_PUBLISHED, openAppKeyboard()));
+  bot.action(ABOUT_ACTION, async (ctx) => {
+    await ctx.answerCbQuery().catch(() => {});
+    await ctx.reply(aboutText(), { parse_mode: "HTML", ...openKeyboard(webAppUrl()) });
+  });
+
+  // Нижнее меню. Регистрируется до общего обработчика текста, чтобы кнопки не уходили в ИИ.
+  bot.hears(MENU_OPEN, (ctx) =>
+    ctx.reply(webAppUrl() ? "Открываю ATA Academy — выберите, с чего начнём:" : APP_NOT_PUBLISHED, {
+      ...openKeyboard(webAppUrl()),
+    }),
+  );
+  bot.hears(MENU_PROFILE, (ctx) =>
+    ctx.reply(profileText(getAccount(ctx.from.id)), { parse_mode: "HTML", ...profileKeyboard(webAppUrl()) }),
+  );
+
+  bot.command("app", (ctx) => ctx.reply(webAppUrl() ? "ATA Academy:" : APP_NOT_PUBLISHED, openKeyboard(webAppUrl())));
+  bot.command("menu", (ctx) => ctx.reply("Меню — внизу 👇", MAIN_MENU));
 
   // Telegram ID нужен для VIP-списка (VIP_TELEGRAM_IDS) — его не видно в интерфейсе Telegram.
   bot.command("myid", (ctx) =>
@@ -386,6 +402,7 @@ async function configureMenuButton(bot) {
   try {
     await bot.telegram.setChatMenuButton({ menuButton: { type: "web_app", text: "ATA Academy", web_app: { url } } });
     await bot.telegram.setMyCommands([
+      { command: "start", description: "Главное меню ATA Academy" },
       { command: "app", description: "Открыть ATA Academy" },
       { command: "reset", description: "Очистить историю переводчика" },
       { command: "stats", description: "Статистика бота" },

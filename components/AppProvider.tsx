@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import type { WebApp as WebAppType } from "@twa-dev/types";
 import { ApiError, apiJson, setInitData } from "@/lib/client/api";
@@ -19,6 +20,7 @@ import {
   type ThemePref,
 } from "@/lib/client/theme";
 import SubscriptionCard from "@/components/SubscriptionCard";
+import { loadProfile, profileFromAccount, rememberPath, saveProfile, takeResumePath } from "@/lib/client/memory";
 
 type Haptic = "light" | "medium" | "selection" | "success" | "warning" | "error";
 
@@ -53,7 +55,7 @@ export default function AppProvider({ children }: { children: React.ReactNode })
   const [webApp, setWebApp] = useState<WebAppType | null>(null);
   const [status, setStatus] = useState<AppContextValue["status"]>("loading");
   const [account, setAccount] = useState<Account | null>(null);
-  const [features, setFeatures] = useState<Features>({ tts: false, vision: false });
+  const [features, setFeatures] = useState<Features>({ vision: false });
   const [offer, setOffer] = useState<Offer | null>(null);
   const [paywall, setPaywall] = useState<string | null>(null);
   const webAppRef = useRef<WebAppType | null>(null);
@@ -122,16 +124,50 @@ export default function AppProvider({ children }: { children: React.ReactNode })
   const refresh = useCallback(async () => {
     try {
       const me = await apiJson<MeResponse>("/api/me");
-      setAccount(me.account);
+      let current = me.account;
+      if (current.role) {
+        // Свежая резервная копия профиля на устройстве и в облаке Telegram.
+        const profile = profileFromAccount(current);
+        if (profile) saveProfile(profile);
+      } else {
+        // Сервер профиль не знает (новый сервер, потерянный файл) — восстанавливаем его
+        // молча из сохранённого, и повторный онбординг не показывается.
+        const saved = await loadProfile();
+        if (saved) {
+          try {
+            current = (await apiJson<{ account: Account }>("/api/profile", saved)).account;
+          } catch {
+            // не вышло — покажем онбординг как обычно
+          }
+        }
+      }
+      setAccount(current);
       setFeatures(me.features);
       setOffer(me.offer);
       setStatus("ready");
-      return me.account;
+      return current;
     } catch {
       setStatus("error");
       return null;
     }
   }, []);
+
+  // Последний экран запоминается; при новом запуске Mini App на главной — возвращаемся
+  // туда, где пользователь остановился (урок, Art, перевод).
+  const pathname = usePathname();
+  const router = useRouter();
+  useEffect(() => {
+    if (status !== "ready" || !account?.role || account.access !== "approved") return;
+    if (pathname === "/") {
+      const resume = takeResumePath();
+      if (resume) {
+        router.replace(resume);
+        return;
+      }
+    }
+    takeResumePath();
+    rememberPath(pathname);
+  }, [status, account?.role, account?.access, pathname, router]);
 
   // SDK Telegram обращается к window при импорте — грузим его только в браузере.
   useEffect(() => {
@@ -222,7 +258,22 @@ export default function AppProvider({ children }: { children: React.ReactNode })
       textSize,
       setTextSize,
     }),
-    [status, account, features, offer, webApp, refresh, haptic, openPaywall, handleError, theme, themePref, setThemePref, textSize, setTextSize],
+    [
+      status,
+      account,
+      features,
+      offer,
+      webApp,
+      refresh,
+      haptic,
+      openPaywall,
+      handleError,
+      theme,
+      themePref,
+      setThemePref,
+      textSize,
+      setTextSize,
+    ],
   );
 
   return (

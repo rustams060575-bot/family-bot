@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import Waveform from "@/components/Waveform";
-import { ApiError, apiFetch, apiJson } from "@/lib/client/api";
-import { AudioEngine, speakWithBrowser } from "@/lib/client/audio";
+import { ApiError, apiJson } from "@/lib/client/api";
+import { AudioEngine, primeSpeech, speakWithBrowser, stopSpeech } from "@/lib/client/audio";
 import { martinaGreeting, type Topic, type Track } from "@/lib/client/tracks";
+import { loadChat, saveChat } from "@/lib/client/memory";
 import { enter, exit, press, spring } from "@/lib/motion";
 
 type Correction = { heard: string; correct: string; note: string };
@@ -22,7 +23,13 @@ type Message = {
   // Реплика клиента (переспрос, подсказка) — показывается, но не уходит в историю для ИИ.
   local?: boolean;
 };
-type Reply = { reply: string; translation?: string; corrections?: Correction[]; pronunciation?: string; choices?: string[] };
+type Reply = {
+  reply: string;
+  translation?: string;
+  corrections?: Correction[];
+  pronunciation?: string;
+  choices?: string[];
+};
 type Phase = "idle" | "recording" | "transcribing" | "thinking" | "speaking";
 
 type Props = { track: Track; topic: Topic; kid: boolean };
@@ -32,7 +39,8 @@ const MIN_RECORDING_BYTES = 2000;
 
 // Мягкие переспросы Мартины вместо системных ошибок.
 const SAY_AGAIN = "Ой, я плохо услышала! Повтори ещё раз, пожалуйста, чуть громче!";
-const NO_MIC = "Мне пока не слышно микрофон. Разреши его в настройках Telegram — и поговорим голосом! А пока можно написать.";
+const NO_MIC =
+  "Мне пока не слышно микрофон. Разреши его в настройках Telegram — и поговорим голосом! А пока можно написать.";
 const RETRY = "Ой, связь на секунду пропала. Напиши или скажи это ещё раз, пожалуйста!";
 
 let nextId = 1;
@@ -41,20 +49,39 @@ let nextId = 1;
 function speechLangFor(text: string, track: Track) {
   const letters = text.replace(/[^\p{L}]/gu, "");
   const cyrillic = text.replace(/[^Ѐ-ӿ]/g, "");
-  return letters && cyrillic.length / letters.length > 0.3 ? "ru-RU" : track.speechLang ?? "en-US";
+  return letters && cyrillic.length / letters.length > 0.3 ? "ru-RU" : (track.speechLang ?? "en-US");
 }
 
 export default function VoiceAssistant({ track, topic, kid }: Props) {
-  const { account, features, refresh, haptic, handleError } = useApp();
+  const { account, refresh, haptic, handleError } = useApp();
+  // Занятие продолжается с того же места: история хранится на устройстве по треку и теме.
+  const chatKey = `${track.id}:${topic.id}:${kid ? "kid" : "adult"}`;
+  const greeting = (): Message => ({
+    id: nextId++,
+    role: "assistant",
+    content: `${martinaGreeting(account?.firstName)} ${topic.opener.text}`,
+    choices: topic.opener.choices,
+  });
   // Мартина говорит первой: приветствие и варианты ответа готовы сразу, без запроса к ИИ.
-  const [messages, setMessages] = useState<Message[]>(() => [
-    {
-      id: nextId++,
-      role: "assistant",
-      content: `${martinaGreeting(account?.firstName)} ${topic.opener.text}`,
-      choices: topic.opener.choices,
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = loadChat<Message>(chatKey).filter((message) => message?.role && message.content);
+    if (!saved.length) return [greeting()];
+    nextId = Math.max(nextId, ...saved.map((message) => message.id + 1));
+    return saved;
+  });
+  const resumed = messages.length > 1;
+
+  useEffect(() => {
+    saveChat(chatKey, messages);
+  }, [chatKey, messages]);
+
+  function restart() {
+    haptic("light");
+    stopSpeech();
+    setPhase("idle");
+    setDraft("");
+    setMessages([greeting()]);
+  }
   const [phase, setPhase] = useState<Phase>("idle");
   const [draft, setDraft] = useState("");
   const [seconds, setSeconds] = useState(0);
@@ -94,16 +121,10 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
         setSpeakingId(null);
         setPhase("idle");
       };
-      const lang = speechLangFor(message.content, track);
-      if (!features.tts) return speakWithBrowser(message.content, lang, done);
-      try {
-        const response = await apiFetch("/api/tts", { method: "POST", body: JSON.stringify({ text: message.content }) });
-        await engine().play(await response.arrayBuffer(), done);
-      } catch {
-        speakWithBrowser(message.content, lang, done);
-      }
+      // Только бесплатный голос устройства — никаких платных TTS-сервисов.
+      speakWithBrowser(message.content, speechLangFor(message.content, track), done);
     },
-    [features.tts, track],
+    [track],
   );
 
   const send = useCallback(
@@ -119,7 +140,9 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
           topic: topic.id,
           mode: options.voice ? "voice" : "text",
           uncertain: options.uncertain,
-          messages: history.filter((message) => !message.local).map(({ role, content: text }) => ({ role, content: text })),
+          messages: history
+            .filter((message) => !message.local)
+            .map(({ role, content: text }) => ({ role, content: text })),
         });
 
         const reply: Message = {
@@ -135,7 +158,8 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
         setMessages((current) => [...current, reply]);
         haptic("light");
         refresh();
-        if (options.voice) speak(reply);
+        // Ребёнку Мартина отвечает голосом всегда, взрослому — когда он сам говорил голосом.
+        if (options.voice || kid) speak(reply);
         else setPhase("idle");
       } catch (err) {
         // Лимит открывает плашку Premium; любой другой сбой — мягкая реплика Мартины.
@@ -147,10 +171,11 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
         setPhase("idle");
       }
     },
-    [messages, track.id, topic.id, haptic, refresh, speak, handleError, say],
+    [messages, track.id, topic.id, kid, haptic, refresh, speak, handleError, say],
   );
 
   async function startRecording() {
+    primeSpeech();
     haptic("medium");
     try {
       await engine().startRecording();
@@ -202,6 +227,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
     event.preventDefault();
     const text = draft.trim();
     if (!text || phase !== "idle") return;
+    primeSpeech();
     setDraft("");
     haptic("light");
     send(text);
@@ -209,6 +235,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
 
   function choose(choice: string) {
     if (phase !== "idle") return;
+    primeSpeech();
     haptic("selection");
     send(choice, { choice: true });
   }
@@ -219,6 +246,14 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
 
   return (
     <div className="flex flex-1 flex-col">
+      {resumed && (
+        <div className="-mt-2 mb-3 flex items-center justify-between">
+          <span className="text-footnote text-dim">Продолжаем с того места, где остановились</span>
+          <button onClick={restart} className="min-h-11 px-1 text-subhead font-medium text-champagne">
+            Начать заново
+          </button>
+        </div>
+      )}
       <div className="flex-1 space-y-2 pb-6">
         <AnimatePresence initial={false}>
           {messages.map((message) => (
@@ -240,7 +275,10 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
                   message={message}
                   kid={kid}
                   speaking={speakingId === message.id}
-                  onSpeak={() => speak(message)}
+                  onSpeak={() => {
+                    primeSpeech();
+                    speak(message);
+                  }}
                 />
               )}
             </motion.div>
@@ -277,7 +315,10 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
       </div>
 
       {/* Док ввода — материал с блюром, закреплён над таб-баром (место под него — нижний отступ страницы) */}
-      <div className="fixed inset-x-0 z-20 mx-auto max-w-md px-4 pb-2" style={{ bottom: "calc(3.0625rem + var(--safe-bottom))" }}>
+      <div
+        className="fixed inset-x-0 z-20 mx-auto max-w-md px-4 pb-2"
+        style={{ bottom: "calc(3.0625rem + var(--safe-bottom))" }}
+      >
         <div className="flex items-center gap-2">
           <div className="material min-w-0 flex-1 rounded-full">
             <AnimatePresence mode="wait" initial={false}>
@@ -320,7 +361,9 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
                   <input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    placeholder={busy ? (phase === "transcribing" ? "Мартина слушает…" : "Мартина печатает…") : "Сообщение Мартине"}
+                    placeholder={
+                      busy ? (phase === "transcribing" ? "Мартина слушает…" : "Мартина печатает…") : "Сообщение Мартине"
+                    }
                     disabled={busy}
                     className="min-w-0 flex-1 bg-transparent text-body text-paper outline-none placeholder:text-dim"
                     enterKeyHint="send"
@@ -336,7 +379,15 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
                         aria-label="Отправить"
                         className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-champagne text-ink"
                       >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.4"
+                          aria-hidden
+                        >
                           <path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </motion.button>
@@ -355,8 +406,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
               onPress={() => {
                 if (phase === "recording") stopRecording();
                 else if (phase === "speaking") {
-                  engine().stopPlayback();
-                  window.speechSynthesis?.cancel();
+                  stopSpeech();
                   setPhase("idle");
                   setSpeakingId(null);
                 } else startRecording();
@@ -503,7 +553,15 @@ function MicButton({
           transition={spring}
         >
           {!recording && (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden
+            >
               <rect x="9" y="3" width="6" height="11" rx="3" />
               <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" strokeLinecap="round" />
             </svg>
@@ -516,7 +574,16 @@ function MicButton({
 
 function MicGlyph() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="mr-1.5 inline -translate-y-px opacity-60" aria-label="голосом">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      className="mr-1.5 inline -translate-y-px opacity-60"
+      aria-label="голосом"
+    >
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" strokeLinecap="round" />
     </svg>

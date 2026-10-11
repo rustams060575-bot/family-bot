@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticate, unauthorized } from "@/lib/server/session";
-import { isPremium, publicAccount } from "@/lib/store.mjs";
-import { ttsAllowed, visionProvider } from "@/lib/ai.mjs";
+import { publicAccount } from "@/lib/store.mjs";
+import { visionProvider } from "@/lib/ai.mjs";
 import { premiumOffer } from "@/lib/server/premium";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     account: publicAccount(account),
-    features: { tts: ttsAllowed(isPremium(account)), vision: !!visionProvider() },
+    features: { vision: !!visionProvider() },
     offer: premiumOffer(),
   });
 }

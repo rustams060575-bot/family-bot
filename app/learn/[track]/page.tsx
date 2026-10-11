@@ -8,12 +8,17 @@ import { useApp } from "@/components/AppProvider";
 import ScreenHeader from "@/components/ScreenHeader";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import { KIDS_TOPIC, kidsTrackName, trackById } from "@/lib/client/tracks";
+import { loadTopic, saveTopic } from "@/lib/client/memory";
 import { rise, spring } from "@/lib/motion";
 
 function TrackScreen({ trackId }: { trackId: string }) {
   const { account, haptic } = useApp();
   const track = trackById(trackId);
-  const [topicId, setTopicId] = useState(track?.topics?.[0]?.id);
+  // Открываем ту тему, на которой пользователь остановился в прошлый раз.
+  const [topicId, setTopicId] = useState(() => {
+    const saved = typeof window !== "undefined" ? loadTopic(trackId) : null;
+    return track?.topics?.some((item) => item.id === saved) ? saved! : track?.topics?.[0]?.id;
+  });
   if (!track?.topics) notFound();
   const kid = !!account?.kid;
   const topic = kid ? KIDS_TOPIC : track.topics.find((item) => item.id === topicId) ?? track.topics[0];
@@ -37,6 +42,7 @@ function TrackScreen({ trackId }: { trackId: string }) {
                   key={item.id}
                   onClick={() => {
                     setTopicId(item.id);
+                    saveTopic(track.id, item.id);
                     haptic("selection");
                   }}
                   className="relative min-h-9 rounded-full px-4"

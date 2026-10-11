@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
-import { apiFetch, apiJson } from "@/lib/client/api";
-import { AudioEngine, speakWithBrowser } from "@/lib/client/audio";
+import { apiJson } from "@/lib/client/api";
+import { speakWithBrowser } from "@/lib/client/audio";
 import { enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Lang = "uz" | "ru" | "es" | "en";
@@ -42,7 +42,7 @@ function LangPicker({ value, onChange, includeAuto }: { value: string; onChange:
 }
 
 export default function Translator() {
-  const { features, refresh, haptic, handleError } = useApp();
+  const { refresh, haptic, handleError } = useApp();
   const [from, setFrom] = useState<Lang | "auto">("auto");
   const [to, setTo] = useState<Lang>("uz");
   const [register, setRegister] = useState<"casual" | "business">("casual");
@@ -51,7 +51,6 @@ export default function Translator() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const engineRef = useRef<AudioEngine | null>(null);
 
   async function translate() {
     const source = text.trim();
@@ -87,15 +86,7 @@ export default function Translator() {
     if (!result) return;
     haptic("light");
     const lang = LANGS.find((item) => item.id === to)!.speech;
-    if (!features.tts) return speakWithBrowser(result.translation, lang);
-    try {
-      const engine = (engineRef.current ??= new AudioEngine());
-      engine.unlock();
-      const response = await apiFetch("/api/tts", { method: "POST", body: JSON.stringify({ text: result.translation }) });
-      await engine.play(await response.arrayBuffer());
-    } catch {
-      speakWithBrowser(result.translation, lang);
-    }
+    speakWithBrowser(result.translation, lang);
   }
 
   async function copy() {

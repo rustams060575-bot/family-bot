@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import { apiJson } from "@/lib/client/api";
+import { profileFromAccount, saveProfile } from "@/lib/client/memory";
 import { ROLES, TRACKS } from "@/lib/client/tracks";
 import type { Account, Role, TrackId } from "@/lib/client/types";
 import { enter, exit, press, rise, spring, stagger } from "@/lib/motion";
@@ -78,6 +79,9 @@ export default function Onboarding() {
         ...(needsApplication ? { applicationNote: note } : {}),
       });
       haptic("success");
+      // Онбординг проходится один раз: профиль сохраняется и на устройстве, и в облаке Telegram.
+      const profile = profileFromAccount(updated);
+      if (profile) saveProfile(profile);
       setAccount(updated);
     } catch (err) {
       setError(handleError(err));

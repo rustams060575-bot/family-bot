@@ -38,7 +38,11 @@ function configurationProblems() {
   if (!telegramBotToken()) problems.push("Telegram-токен не найден (TELEGRAM_BOT_TOKEN, BOT_TOKEN)");
   if (groqKeyCount() === 0) problems.push(`ни один ключ Groq не найден (${GROQ_API_KEY_ENV_VARS.join(", ")})`);
   if (!webAppUrl()) problems.push("нет адреса Mini App (WEBAPP_URL или публичный домен Railway) — кнопка запуска не отправляется");
-  if (!process.env.OPENAI_API_KEY) problems.push("OPENAI_API_KEY не задан — озвучка через голос браузера");
+  // Без Volume диск контейнера очищается при каждом деплое: профили, заявки и стрики теряются
+  // (Mini App восстановит роль и трек из памяти устройства, но одобрение заявки — нет).
+  if (process.env.RAILWAY_ENVIRONMENT && !process.env.DATA_DIR) {
+    problems.push("DATA_DIR не задан — без Railway Volume профили и заявки стираются при каждом деплое");
+  }
   if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) problems.push("нет ключа Vision — разбор рисунков выключен");
   else if (!process.env.GEMINI_API_KEY) problems.push("GEMINI_API_KEY не задан — разбор рисунков идёт только через OpenAI");
   return problems;
@@ -58,7 +62,7 @@ http
       const problems = configurationProblems();
       res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
       // Не секреты: публичный @username бота и адрес приложения — для быстрой проверки,
-      // что токен принадлежит нужному боту (Ата AI), а кнопка ведёт куда нужно.
+      // что токен принадлежит нужному боту, а кнопка ведёт куда нужно.
       const info = [
         `бот: ${getBotIdentity() ?? (telegramBotToken() ? "запускается или токен не принят Telegram" : "нет токена")}`,
         `Mini App: ${webAppUrl() ?? "не задан"}`,
