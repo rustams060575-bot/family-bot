@@ -8,6 +8,7 @@ import { ApiError, apiFetch } from "@/lib/client/api";
 import { martinaGreeting } from "@/lib/client/tracks";
 import SpeakButton from "@/components/SpeakButton";
 import MartinaNote from "@/components/MartinaNote";
+import ArtChat from "@/components/ArtChat";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Analysis = {
@@ -17,6 +18,9 @@ type Analysis = {
   details: { title: string; text: string }[];
   question: string;
   nextTask: { title: string; steps: string[]; materials: string };
+  // Задание Мартины, по которому оценён рисунок, и её отзыв о нём.
+  task: string | null;
+  taskNote: string;
 };
 
 type Source = "photo" | "canvas";
@@ -89,6 +93,7 @@ export default function ArtAnalyzer() {
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
+  const sourceRef = useRef<HTMLDivElement>(null);
   const kid = !!account?.kid;
 
   useEffect(
@@ -231,8 +236,29 @@ export default function ArtAnalyzer() {
           <motion.div key="pick" variants={rise} initial="hidden" animate="show" exit="leave">
             <MartinaNote text={greeting} />
 
+            {/* Чат с Мартиной: вопросы, пожелания и творческие задания — текстом или голосом */}
+            <div className="mt-4">
+              <ArtChat
+                onPhoto={() => {
+                  setSource("photo");
+                  setNote(null);
+                  // Вызов в том же нажатии — иначе WebView не откроет камеру.
+                  cameraInput.current?.click();
+                }}
+                onCanvas={() => {
+                  haptic("selection");
+                  setSource("canvas");
+                  setNote(null);
+                  setTimeout(() => sourceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+                }}
+              />
+            </div>
+
             {/* Источник рисунка — сегментированный контрол iOS */}
-            <div className="relative mb-4 mt-6 grid grid-cols-2 rounded-[0.5625rem] bg-fill p-0.5">
+            <div
+              ref={sourceRef}
+              className="relative mb-4 mt-6 grid scroll-mt-4 grid-cols-2 rounded-[0.5625rem] bg-fill p-0.5"
+            >
               {(["photo", "canvas"] as Source[]).map((value) => (
                 <button
                   key={value}
@@ -437,6 +463,14 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
         <Sparkle delay={0.5} size={16} className="-top-2 right-2" />
         <Sparkle delay={0.7} size={10} className="right-8 top-2" />
       </motion.div>
+
+      {analysis.task && analysis.taskNote && (
+        <motion.div variants={rise} className="glass glass-accent px-4 pb-1 pt-4">
+          <p className="text-footnote font-semibold text-champagne">Задание «{analysis.task}»</p>
+          <p className="mt-1 text-body">{analysis.taskNote}</p>
+          <SpeakButton text={analysis.taskNote} className="-ml-1 px-1" />
+        </motion.div>
+      )}
 
       {!!analysis.colors.length && (
         <motion.div variants={rise}>

@@ -35,6 +35,8 @@ function langCode(value: unknown) {
 // Подсказка Whisper: имя наставника и ученика плюс фраза на каждом ожидаемом языке.
 function vocabularyPrompt(track: string, name: string, kid: boolean) {
   const hello = name ? `Привет, Мартина! Я ${name}.` : "Привет, Мартина!";
+  if (track === "art")
+    return `${hello} Что мне нарисовать? Дай сложное задание. Хочу нарисовать дракона, замок, ракету. Краски, карандаши, фломастеры.`;
   if (kid) return `${hello} Космос, ракета, машинки, супергерои. Hello! Cat, dog, rocket, car.`;
   if (track === "spanish") return `${hello} Hola, ¿qué tal? Quiero practicar español.`;
   return `${hello} Hello, how are you? I'd like to practice my English.`;

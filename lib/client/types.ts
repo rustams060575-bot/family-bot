@@ -2,6 +2,7 @@ export type Role = "student" | "tutor" | "parent";
 export type TrackId = "spanish" | "english" | "art" | "translate";
 export type Plan = "free" | "premium";
 export type Level = "A1" | "A2" | "B1" | "B2";
+export type ArtTask = { title: string; idea: string; steps: string[]; materials: string; givenAt: string };
 
 export type Account = {
   firstName: string;
@@ -12,6 +13,8 @@ export type Account = {
   vip: boolean;
   // Детский профиль (Атахан): Мартина в игровом режиме, SF Pro Rounded, без исправлений.
   kid: boolean;
+  // Последнее творческое задание Мартины в Kids Art (разбор рисунка учитывает его).
+  artTask: ArtTask | null;
   // Уровень по CEFR в языковых треках (тест уровня или выбор вручную).
   levels: { spanish: Level | null; english: Level | null };
   // Администратор школы: доступ к /admin. Супер-админ (@r_design_space) получает заявки.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticate, badRequest, requireAccess, unauthorized } from "@/lib/server/session";
-import { countArtAnalysis, displayName, isKid, recordActivity } from "@/lib/store.mjs";
+import { countArtAnalysis, displayName, isKid, recordActivity, setArtTask } from "@/lib/store.mjs";
 import { artPrompt } from "@/lib/prompts.mjs";
 import { analyzeImageJson, sniffImageType, visionChain, visionProvider } from "@/lib/ai.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
@@ -76,7 +76,8 @@ async function handle(request: Request) {
 
   try {
     const parsed: any = await analyzeImageJson(
-      artPrompt({ name: isKid(account) ? displayName(account) : "" }),
+      // Мартина помнит своё последнее задание и оценивает рисунок с его учётом.
+      artPrompt({ name: isKid(account) ? displayName(account) : "" }, account.artTask ?? null),
       buffer,
       mimeType,
       usable,
@@ -88,7 +89,12 @@ async function handle(request: Request) {
     recordActivity(account);
 
     const nextTask = parsed.nextTask ?? {};
+    const reviewedTask = account.artTask?.title ?? null;
+    // «Новое задание» из разбора становится текущим — следующий рисунок оценится по нему.
+    setArtTask(account, { title: nextTask.title, steps: nextTask.steps, materials: nextTask.materials });
     return NextResponse.json({
+      task: reviewedTask,
+      taskNote: reviewedTask ? text(parsed.taskNote) : "",
       title: text(parsed.title),
       praise: text(parsed.praise),
       colors: (Array.isArray(parsed.colors) ? parsed.colors : [])
