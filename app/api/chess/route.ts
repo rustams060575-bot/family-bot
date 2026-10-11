@@ -22,6 +22,7 @@ import {
   nextPractice,
   normalizeChessLesson,
   publicChess,
+  recordGame,
   saveChessLesson,
 } from "@/lib/chessSchool.mjs";
 
@@ -107,6 +108,14 @@ export async function POST(request: Request) {
       const result = answerPuzzle(account, String(body?.slot ?? ""), body?.answer);
       if (!result) return badRequest("Задача уже закрыта.");
       return NextResponse.json({ result, chess: publicChess(account) });
+    }
+
+    // Итог партии с Лео: результат, цвет, число полуходов.
+    case "game": {
+      if (!recordGame(account, { result: body?.result, color: body?.color, plies: body?.plies, level: body?.level })) {
+        return badRequest("Неизвестный итог партии.");
+      }
+      return NextResponse.json({ chess: publicChess(account) });
     }
 
     case "next-practice": {

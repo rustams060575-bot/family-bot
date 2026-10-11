@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import ChessBoard from "@/components/ChessBoard";
+import ChessGame from "@/components/ChessGame";
 import LeoChat from "@/components/LeoChat";
 import MartinaNote from "@/components/MartinaNote";
 import SpeakButton from "@/components/SpeakButton";
@@ -12,7 +13,7 @@ import { enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 // «Шахматы & Логика с Лео»: при первом входе Лео знакомится (возраст, если он ещё
 // не известен, и два вопроса об уровне), дальше — задача дня, урок по программе,
-// карта программы, практика и чат. Задачи — из банка, проверенного движком.
+// карта программы, практика, партия с Лео и чат. Задачи — из банка, проверенного движком.
 
 type Puzzle = {
   id: string;
@@ -51,6 +52,7 @@ type ChessState = {
   nextTopic: string | null;
   solved: number;
   lessonsDone: number;
+  games: { played: number; won: number; drawn: number; lost: number };
   lesson: Lesson | null;
   daily: Puzzle | null;
   practice: Puzzle | null;
@@ -58,6 +60,12 @@ type ChessState = {
 type PuzzleResult = { correct: boolean; done: boolean; attemptsLeft: number };
 
 const AGES = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+type Mode = "train" | "game" | "chat";
+const MODES: { id: Mode; title: string }[] = [
+  { id: "train", title: "Тренировка" },
+  { id: "game", title: "Партия" },
+  { id: "chat", title: "Спросить" },
+];
 const LEO = "Л";
 
 const primaryButton =
@@ -71,7 +79,20 @@ export default function ChessSchool() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [resurvey, setResurvey] = useState(false);
-  const [mode, setMode] = useState<"train" | "chat">("train");
+  const [mode, setMode] = useState<Mode>("train");
+
+  // Итог партии с Лео — в прогресс ученика.
+  const reportGame = useCallback(
+    async (payload: { result: "win" | "loss" | "draw"; color: "w" | "b"; plies: number }) => {
+      try {
+        setChess((await apiJson<{ chess: ChessState }>("/api/chess", { action: "game", ...payload })).chess);
+        refresh();
+      } catch {
+        // Не записалось — партия всё равно сыграна; счётчик догонит со следующей.
+      }
+    },
+    [refresh],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -175,9 +196,9 @@ export default function ChessSchool() {
         </button>
       </div>
 
-      {/* Сегментированный контрол iOS: тренировка или разговор с Лео */}
-      <div className="relative mb-6 grid grid-cols-2 rounded-[0.5625rem] bg-fill p-0.5">
-        {(["train", "chat"] as const).map((value) => (
+      {/* Сегментированный контрол iOS: тренировка, партия с Лео или разговор */}
+      <div className="relative mb-6 grid grid-cols-3 rounded-[0.5625rem] bg-fill p-0.5">
+        {MODES.map(({ id: value, title }) => (
           <button
             key={value}
             onClick={() => {
@@ -194,9 +215,7 @@ export default function ChessSchool() {
                 className="segment-thumb absolute inset-0 -z-10 rounded-[0.4375rem]"
               />
             )}
-            <span className={mode === value ? "text-paper" : "text-mist"}>
-              {value === "train" ? "♟︎ Тренировка" : "Спросить Лео"}
-            </span>
+            <span className={mode === value ? "text-paper" : "text-mist"}>{title}</span>
           </button>
         ))}
       </div>
@@ -205,6 +224,15 @@ export default function ChessSchool() {
         {mode === "chat" ? (
           <motion.div key="chat" variants={rise} initial="hidden" animate="show" exit="leave">
             <LeoChat />
+          </motion.div>
+        ) : mode === "game" ? (
+          <motion.div key="game" variants={rise} initial="hidden" animate="show" exit="leave">
+            <ChessGame
+              level={chess.level}
+              levelLabel={chess.levelLabel ?? ""}
+              young={(chess.age ?? 8) <= 7}
+              onFinished={reportGame}
+            />
           </motion.div>
         ) : (
           <motion.div
@@ -220,6 +248,34 @@ export default function ChessSchool() {
                 <MartinaNote monogram={LEO} text={failure} />
               </motion.div>
             )}
+
+            {/* Лео сам предлагает сыграть */}
+            <motion.div variants={rise}>
+              <motion.button
+                {...press}
+                onClick={() => {
+                  haptic("light");
+                  setMode("game");
+                }}
+                className="glass glass-accent flex w-full items-center gap-3 p-4 text-left"
+              >
+                <span
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-champagne text-headline font-semibold text-ink"
+                  aria-hidden
+                >
+                  {LEO}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-headline font-semibold">Хочешь сыграть со мной партию?</span>
+                  <span className="block text-subhead text-mist">
+                    {chess.games.played
+                      ? `Сыграно ${chess.games.played} · побед ${chess.games.won}`
+                      : "Настоящая партия — без поддавков"}
+                  </span>
+                </span>
+                <span className="shrink-0 text-body font-semibold text-champagne">Играть</span>
+              </motion.button>
+            </motion.div>
 
             {chess.daily && (
               <motion.section variants={rise}>

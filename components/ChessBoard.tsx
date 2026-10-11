@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { exit, spring } from "@/lib/motion";
 
-// Доска Лео: позиция из FEN, ход — касание своей фигуры, затем клетки назначения.
-// Правила проверяет сервер (решение задачи), доска только показывает и переставляет
-// фигуры: рокировка, взятие на проходе и превращение в ферзя отрисовываются верно.
+// Доска Лео: позиция из FEN (+ последовательность ходов), ход — касание своей фигуры,
+// затем клетки назначения. Правила проверяет вызывающий код (сервер для задач, chess.js
+// для партии); доска показывает и переставляет фигуры: рокировка, взятие на проходе и
+// превращение отрисовываются верно.
 
 type Color = "w" | "b";
 type Piece = { id: string; type: string; color: Color; square: string };
@@ -53,8 +54,9 @@ export function applyMove(pieces: Piece[], uci: string): Piece[] {
     next = next.map((piece) => (piece.square === rookFrom ? { ...piece, square: rookTo } : piece));
   }
   const promotes = mover.type === "p" && (to[1] === "8" || to[1] === "1");
+  const promotion = /^[qrbn]$/.test(uci[4] ?? "") ? uci[4] : "q";
   return next.map((piece) =>
-    piece.id === mover.id ? { ...piece, square: to, type: promotes ? "q" : piece.type } : piece,
+    piece.id === mover.id ? { ...piece, square: to, type: promotes ? promotion : piece.type } : piece,
   );
 }
 
@@ -62,6 +64,17 @@ type Props = {
   fen: string;
   // Показать позицию после хода (решение или ход ученика).
   move?: string | null;
+  // Партия: все ходы от начальной позиции по порядку.
+  moves?: string[];
+  // Чья сторона внизу; по умолчанию — та, что ходит в исходной позиции.
+  orientation?: Color;
+  // Чьи фигуры можно двигать (null — ничьи); по умолчанию — сторона из FEN.
+  movable?: Color | null;
+  // Допустимые клетки для выбранной фигуры — точки-подсказки и фильтр выбора.
+  targets?: (from: string) => string[];
+  lastMove?: string | null;
+  // Клетка короля под шахом.
+  checkSquare?: string | null;
   // Клетки-подсказки: откуда и куда шёл верный ход.
   marks?: string[];
   // Клетка неверного хода — коротко подсвечивается.
@@ -70,13 +83,29 @@ type Props = {
   onMove?: (uci: string) => void;
 };
 
-export default function ChessBoard({ fen, move, marks = [], wrong, disabled, onMove }: Props) {
+export default function ChessBoard({
+  fen,
+  move,
+  moves,
+  orientation,
+  movable,
+  targets,
+  lastMove,
+  checkSquare,
+  marks = [],
+  wrong,
+  disabled,
+  onMove,
+}: Props) {
   const initial = useMemo(() => parseFen(fen), [fen]);
-  const pieces = useMemo(() => (move ? applyMove(initial.pieces, move) : initial.pieces), [initial, move]);
+  const sequence = useMemo(() => moves ?? (move ? [move] : []), [moves, move]);
+  const pieces = useMemo(() => sequence.reduce(applyMove, initial.pieces), [initial, sequence]);
   const [selected, setSelected] = useState<string | null>(null);
-  const flip = initial.turn === "b";
+  const side = movable === undefined ? initial.turn : movable;
+  const flip = (orientation ?? initial.turn) === "b";
 
-  useEffect(() => setSelected(null), [fen, move, disabled]);
+  useEffect(() => setSelected(null), [fen, sequence, disabled]);
+  const hints = selected && targets ? targets(selected) : [];
 
   const bySquare = new Map(pieces.map((piece) => [piece.square, piece]));
   const ranks = flip ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
@@ -88,9 +117,11 @@ export default function ChessBoard({ fen, move, marks = [], wrong, disabled, onM
   };
 
   function tap(square: string) {
-    if (disabled || !onMove) return;
+    if (disabled || !onMove || !side) return;
     const piece = bySquare.get(square);
-    if (piece && piece.color === initial.turn) {
+    if (piece && piece.color === side && !(selected && hints.includes(square))) {
+      // Фигура без единого хода не выбирается — сразу понятно, что ей некуда идти.
+      if (targets && !targets(square).length) return;
       setSelected(square === selected ? null : square);
       return;
     }
@@ -104,7 +135,7 @@ export default function ChessBoard({ fen, move, marks = [], wrong, disabled, onM
     <div
       className="relative aspect-square w-full overflow-hidden rounded-[0.875rem]"
       role="grid"
-      aria-label={`Шахматная доска, ходят ${initial.turn === "w" ? "белые" : "чёрные"}`}
+      aria-label={`Шахматная доска${side ? `, ходят ${side === "w" ? "белые" : "чёрные"}` : ""}`}
     >
       <div className="grid h-full w-full grid-cols-8 grid-rows-8">
         {ranks.map((rank, rowIndex) =>
@@ -124,7 +155,22 @@ export default function ChessBoard({ fen, move, marks = [], wrong, disabled, onM
                 className={`relative ${dark ? "chess-dark" : "chess-light"} disabled:cursor-default`}
                 style={{ transform: "none" }}
               >
+                {lastMove && (lastMove.slice(0, 2) === square || lastMove.slice(2, 4) === square) && (
+                  <span className="absolute inset-0 bg-champagne/30" />
+                )}
                 {marks.includes(square) && <span className="absolute inset-0 bg-champagne/45" />}
+                {checkSquare === square && (
+                  <span className="absolute inset-0 bg-[radial-gradient(circle,rgb(var(--danger)/0.55)_0%,transparent_70%)]" />
+                )}
+                {hints.includes(square) && (
+                  <span
+                    className={`absolute inset-0 m-auto rounded-full ${
+                      piece
+                        ? "h-full w-full shadow-[inset_0_0_0_3px_rgb(28_28_30/0.45)]"
+                        : "h-[28%] w-[28%] bg-[rgb(28_28_30/0.28)]"
+                    }`}
+                  />
+                )}
                 {wrong === square && <span className="absolute inset-0 bg-danger/40" />}
                 {selected === square && (
                   <span className="absolute inset-0 shadow-[inset_0_0_0_3px_rgb(28_28_30/0.7)]" />

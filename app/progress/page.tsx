@@ -29,6 +29,7 @@ type ChessProgress = {
   lessonsDone: number;
   topics: { topic: string; title: string; date: string; correct: boolean }[];
   nextTopic: string | null;
+  games: { played: number; won: number; drawn: number; lost: number };
 };
 type Artwork = {
   id: string;
@@ -223,6 +224,18 @@ function ProgressScreen() {
                   </div>
                 ))}
               </div>
+              {!!progress.chess.games.played && (
+                <>
+                  <div className="hairline ml-4" />
+                  <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-3">
+                    <span className="text-body">Партии с Лео</span>
+                    <span className="text-body tabular-nums text-mist">
+                      {progress.chess.games.played} · побед {progress.chess.games.won} · ничьих{" "}
+                      {progress.chess.games.drawn}
+                    </span>
+                  </div>
+                </>
+              )}
               {progress.chess.topics.map((item) => (
                 <div key={`${item.date}-${item.title}`}>
                   <div className="hairline ml-4" />
