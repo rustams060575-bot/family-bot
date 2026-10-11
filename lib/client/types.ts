@@ -1,7 +1,7 @@
 export type Role = "student" | "tutor" | "parent";
 export type TrackId = "spanish" | "english" | "art" | "translate";
 export type Plan = "free" | "premium";
-export type Level = "A1" | "A2" | "B1" | "B2";
+export type Level = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type ArtTask = { title: string; idea: string; steps: string[]; materials: string; givenAt: string };
 
 export type Account = {

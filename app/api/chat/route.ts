@@ -36,6 +36,23 @@ function sanitizeHistory(raw: unknown): Turn[] {
     .map((turn) => ({ role: turn.role, content: turn.content.slice(0, MAX_CHARS) }));
 }
 
+const str = (value: unknown) => String(value ?? "").trim();
+
+// Академическая правка: ошибка → верно → правило → продвинутые синонимы → стильная версия.
+function academicCorrections(raw: unknown) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => ({
+      heard: str(item?.heard),
+      correct: str(item?.correct),
+      note: str(item?.note),
+      synonyms: (Array.isArray(item?.synonyms) ? item.synonyms : []).map(str).filter(Boolean).slice(0, 3),
+      stylish: str(item?.stylish),
+    }))
+    .filter((item) => item.heard && (item.correct || item.stylish))
+    .slice(0, 3);
+}
+
 export async function POST(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
@@ -99,7 +116,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       reply: String(parsed.reply ?? "").trim() || reply,
       translation: String(parsed.translation ?? ""),
-      corrections: !kid && Array.isArray(parsed.corrections) ? parsed.corrections.slice(0, 3) : [],
+      corrections: kid ? [] : academicCorrections(parsed.corrections),
       pronunciation: kid ? "" : String(parsed.pronunciation ?? ""),
       choices: Array.isArray(parsed.choices) ? parsed.choices.map(String).filter(Boolean).slice(0, 3) : [],
     });

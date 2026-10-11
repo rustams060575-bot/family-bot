@@ -30,6 +30,9 @@ type Lesson = {
 };
 type Learning = {
   level: Level | null;
+  // Целевой уровень — на шаг выше текущего; пробелы — по срезу знаний.
+  target: Level | null;
+  gaps: string[];
   lessonsDone: number;
   recentTopics: string[];
   lesson: Lesson | null;
@@ -42,7 +45,11 @@ const LEVELS: { id: Level; caption: string }[] = [
   { id: "A2", caption: "Объясняюсь в простых ситуациях" },
   { id: "B1", caption: "Говорю на бытовые темы" },
   { id: "B2", caption: "Свободно, хочу шлифовать" },
+  { id: "C1", caption: "Академический уровень: эссе, дебаты" },
+  { id: "C2", caption: "Как образованный носитель — шлифую стиль" },
 ];
+
+type Placed = { level: Level; correct: number; total: number; gaps: string[]; target: Level };
 
 const STEPS = [
   { id: "theory", title: "Теория" },
@@ -90,7 +97,7 @@ export default function LanguageCoach({ track }: { track: Track }) {
         return data;
       } catch (err) {
         const message = handleError(err);
-        if (message !== null) setFailure("Ой, Мартина не успела ответить. Попробуй ещё раз, пожалуйста.");
+        if (message !== null) setFailure("Мартина не успела ответить. Попробуй ещё раз.");
         return null;
       } finally {
         setBusy(false);
@@ -122,10 +129,9 @@ export default function LanguageCoach({ track }: { track: Track }) {
           return data?.placement ?? null;
         }}
         onDone={async (payload) => {
-          const data = await act<{ result?: { level: Level; correct: number; total: number } }>(
-            payload.answers ? "placement" : "level",
-            payload,
-          );
+          // Экран результата (уровень и пробелы) остаётся, пока ученик сам не нажмёт «Начать урок дня».
+          if (payload.answers) setRetake(true);
+          const data = await act<{ result?: Placed }>(payload.answers ? "placement" : "level", payload);
           if (data) {
             haptic("success");
             refresh();
@@ -143,6 +149,9 @@ export default function LanguageCoach({ track }: { track: Track }) {
       <motion.div variants={rise} initial="hidden" animate="show" className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-champagne px-3 py-1 text-subhead font-bold text-ink">{learning.level}</span>
+          {learning.target && learning.target !== learning.level && (
+            <span className="text-subhead font-semibold text-champagne">→ {learning.target}</span>
+          )}
           <span className="text-subhead text-mist">
             Уроков пройдено: <span className="tabular-nums text-paper">{learning.lessonsDone}</span>
           </span>
@@ -154,7 +163,9 @@ export default function LanguageCoach({ track }: { track: Track }) {
 
       {failure && <Retry text={failure} onRetry={() => act("lesson")} />}
 
-      {!learning.lesson && !failure && <Loading text={`Мартина готовит урок под уровень ${learning.level}…`} />}
+      {!learning.lesson && !failure && (
+        <Loading text={`Мартина готовит урок уровня ${learning.target ?? learning.level}…`} />
+      )}
 
       {learning.lesson && (
         <DailyLesson
@@ -194,10 +205,7 @@ function Placement({
   track: Track;
   questions: Question[] | null;
   onLoadQuestions: () => Promise<Question[] | null>;
-  onDone: (payload: {
-    answers?: number[];
-    level?: Level;
-  }) => Promise<{ level: Level; correct: number; total: number } | null>;
+  onDone: (payload: { answers?: number[]; level?: Level }) => Promise<Placed | null>;
   onFinish: () => void;
   canCancel: boolean;
 }) {
@@ -206,7 +214,7 @@ function Placement({
   const [stage, setStage] = useState<"intro" | "test" | "manual" | "result">("intro");
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<number[]>([]);
-  const [result, setResult] = useState<{ level: Level; correct: number; total: number } | null>(null);
+  const [result, setResult] = useState<Placed | null>(null);
   const [saving, setSaving] = useState(false);
   const language = LANGUAGE_NAME[track.id] ?? "язык";
 
@@ -250,13 +258,11 @@ function Placement({
       {stage === "intro" && (
         <motion.div key="intro" variants={stagger()} initial="hidden" animate="show" exit="leave" className="space-y-4">
           <motion.div variants={rise}>
-            <MartinaNote
-              text={`Давай сначала узнаем твой уровень — так я подберу уроки точно под тебя. Всего 7 коротких вопросов, около трёх минут. Начнём?`}
-            />
+            <MartinaNote text="Начнём с объективного среза: 5 ёмких вопросов на сложную грамматику и продвинутую лексику. По ответам я найду точечные пробелы и буду работать на шаг выше твоего уровня — к C1/C2." />
           </motion.div>
           <motion.div variants={rise} className="space-y-2 pt-2">
             <motion.button {...press} onClick={start} className={primaryButton}>
-              Пройти тест уровня
+              Пройти срез знаний
             </motion.button>
             <motion.button {...press} onClick={() => setStage("manual")} className={secondaryButton}>
               Я знаю свой уровень
@@ -334,7 +340,7 @@ function Placement({
               </motion.button>
             ))}
           </div>
-          {saving && <p className="mt-4 text-center text-footnote text-dim">Мартина считает результат…</p>}
+          {saving && <p className="mt-4 text-center text-footnote text-dim">Мартина анализирует ответы…</p>}
         </motion.div>
       )}
 
@@ -360,9 +366,26 @@ function Placement({
               Верных ответов: {result.correct} из {result.total}
             </p>
           </motion.div>
+          {!!result.gaps.length && (
+            <motion.div variants={rise}>
+              <p className="label px-4 pb-2">Точечные пробелы</p>
+              <div className="glass overflow-hidden">
+                {result.gaps.map((gap, position) => (
+                  <div key={gap}>
+                    {position > 0 && <div className="hairline ml-4" />}
+                    <p className="px-4 py-3 text-body">{gap}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
           <motion.div variants={rise}>
             <MartinaNote
-              text={`Умница! Твой уровень — ${result.level}. Я составлю урок дня точно под тебя: немного теории, живая практика со мной и короткий тест.`}
+              text={
+                result.gaps.length
+                  ? `Уровень — ${result.level}. Работаем на шаг выше, на ${result.target}: сначала закрываем пробелы из списка, дальше — урок дня с продвинутой лексикой, дискуссией и тестом.`
+                  : `Уровень — ${result.level}, все ответы верны. Дальше — шлифовка до C2 Perfecto: стиль, регистр, риторика.`
+              }
             />
           </motion.div>
           <motion.button variants={rise} {...press} onClick={onFinish} className={primaryButton}>
@@ -564,10 +587,10 @@ function Quiz({
 
   const praise = checked
     ? checked.score === checked.total
-      ? `Блестяще — ${checked.score} из ${checked.total}! Урок дня пройден, я тобой горжусь.`
+      ? `${checked.score} из ${checked.total} — чисто. Урок дня закрыт, завтра поднимаем планку.`
       : checked.score > 0
-        ? `Молодец — ${checked.score} из ${checked.total}! Ошибки — это нормальный шаг, завтра закрепим.`
-        : "Ничего страшного — так мы и учимся! Посмотри пояснения, и завтра всё получится."
+        ? `${checked.score} из ${checked.total}. Разбери пояснения к ошибкам — завтра вернёмся к этому правилу.`
+        : "0 из 3 — правило пока не усвоено. Внимательно разбери пояснения, завтра начнём с него."
     : null;
 
   return (

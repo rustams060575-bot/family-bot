@@ -11,7 +11,8 @@ import { martinaGreeting, type Topic, type Track } from "@/lib/client/tracks";
 import { loadChat, saveChat } from "@/lib/client/memory";
 import { enter, exit, press, spring } from "@/lib/motion";
 
-type Correction = { heard: string; correct: string; note: string };
+// Академическая правка: верный вариант, правило, продвинутые синонимы и стильная версия фразы.
+type Correction = { heard: string; correct: string; note: string; synonyms?: string[]; stylish?: string };
 type Message = {
   id: number;
   role: "user" | "assistant";
@@ -38,16 +39,26 @@ type Props = { track: Track; topic: Topic; kid: boolean };
 const MAX_RECORDING_SEC = 60;
 const MIN_RECORDING_BYTES = 2000;
 
-// Мягкие переспросы Мартины вместо системных ошибок.
-const SAY_AGAIN = "Ой, я плохо услышала! Повтори ещё раз, пожалуйста, чуть громче!";
-const NO_MIC =
-  "Мне пока не слышно микрофон. Разреши его в настройках Telegram — и поговорим голосом! А пока можно написать.";
-const RETRY = "Ой, связь на секунду пропала. Напиши или скажи это ещё раз, пожалуйста!";
+// Переспросы Мартины вместо системных ошибок: ребёнку — мягко, взрослому — ёмко.
+const COPY = {
+  kid: {
+    sayAgain: "Ой, я плохо услышала! Повтори ещё раз, пожалуйста, чуть громче!",
+    noMic:
+      "Мне пока не слышно микрофон. Разреши его в настройках Telegram — и поговорим голосом! А пока можно написать.",
+    retry: "Ой, связь на секунду пропала. Напиши или скажи это ещё раз, пожалуйста!",
+  },
+  adult: {
+    sayAgain: "Не расслышала. Повтори, пожалуйста, чуть громче.",
+    noMic: "Микрофон недоступен — разреши его в настройках Telegram. Пока продолжим письменно.",
+    retry: "Связь прервалась. Повтори последнюю реплику.",
+  },
+};
 
 let nextId = 1;
 
 export default function VoiceAssistant({ track, topic, kid }: Props) {
   const { account, refresh, haptic, handleError } = useApp();
+  const copy = kid ? COPY.kid : COPY.adult;
   // Занятие продолжается с того же места: история хранится на устройстве по треку и теме.
   const chatKey = `${track.id}:${topic.memoryKey ?? topic.id}:${kid ? "kid" : "adult"}`;
   const greeting = (): Message => ({
@@ -161,7 +172,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
         setMessages((current) => current.filter((item) => item.id !== userMessage.id));
         // Набранный текст возвращаем в поле; варианты ответа остаются кнопками под репликой.
         if (!options.voice && !options.choice) setDraft(content);
-        if (message !== null) say(RETRY, messages[messages.length - 1]?.choices);
+        if (message !== null) say(copy.retry, messages[messages.length - 1]?.choices);
         setPhase("idle");
       }
     },
@@ -177,7 +188,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((value) => value + 1), 1000);
     } catch {
-      say(NO_MIC);
+      say(copy.noMic);
       haptic("warning");
     }
   }
@@ -189,7 +200,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
     const blob = await engine().stopRecording();
     if (!blob || blob.size < MIN_RECORDING_BYTES) {
       setPhase("idle");
-      say(SAY_AGAIN);
+      say(copy.sayAgain);
       return;
     }
 
@@ -204,7 +215,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
       );
       if (unclear || !text) {
         setPhase("idle");
-        say(SAY_AGAIN);
+        say(copy.sayAgain);
         haptic("warning");
         return;
       }
@@ -212,7 +223,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
     } catch (err) {
       // Доступ и лимиты обрабатывает приложение; сбой распознавания — просто переспрос.
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) handleError(err);
-      say(SAY_AGAIN);
+      say(copy.sayAgain);
       setPhase("idle");
     }
   }
@@ -448,20 +459,46 @@ function AssistantBubble({
         {!!message.corrections?.length && (
           <div className="mt-3 space-y-2">
             <div className="hairline" />
-            <p className="label pt-1">Поправим</p>
-            {message.corrections.map((correction, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0, transition: { ...enter, delay: 0.2 + index * 0.08 } }}
-                className="text-subhead"
-              >
-                <span className="text-dim line-through decoration-danger/60">{correction.heard}</span>
-                <span className="mx-2 text-dim">→</span>
-                <span className="font-semibold text-paper">{correction.correct}</span>
-                {correction.note && <p className="text-mist">{correction.note}</p>}
-              </motion.div>
-            ))}
+            <p className="label pt-1">Академическая правка</p>
+            {message.corrections.map((correction, index) => {
+              // Ошибки нет — только фраза уровнем выше.
+              const fixed = correction.correct && correction.correct !== correction.heard;
+              return (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0, transition: { ...enter, delay: 0.2 + index * 0.08 } }}
+                  className="text-subhead"
+                >
+                  {fixed && (
+                    <p>
+                      <span className="text-dim line-through decoration-danger/60">{correction.heard}</span>
+                      <span className="mx-2 text-dim">→</span>
+                      <span className="font-semibold text-paper">{correction.correct}</span>
+                    </p>
+                  )}
+                  {correction.note && <p className="text-mist">{correction.note}</p>}
+                  {!!correction.synonyms?.length && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Продвинутые синонимы">
+                      {correction.synonyms.map((synonym) => (
+                        <span
+                          key={synonym}
+                          className="rounded-full bg-champagne/[0.14] px-2.5 py-0.5 text-footnote font-medium text-champagne"
+                        >
+                          {synonym}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {correction.stylish && (
+                    <div className="mt-1.5 rounded-xl bg-fill px-3 py-2">
+                      <p className="text-footnote font-semibold text-champagne">Стильнее</p>
+                      <p className="mt-0.5 text-paper">{correction.stylish}</p>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         )}
 

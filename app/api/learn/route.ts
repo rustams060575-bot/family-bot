@@ -47,13 +47,20 @@ export async function GET(request: Request) {
 }
 
 // Генерация урока дня: до двух попыток — модель изредка присылает неполный JSON.
-async function generateLesson(track: string, level: string, topics: string[], label: string, profile: string) {
+async function generateLesson(
+  track: string,
+  level: string,
+  topics: string[],
+  label: string,
+  profile: string,
+  gaps: string[],
+) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const reply = await groqChat(
         [
-          { role: "system", content: lessonPrompt(track, level, topics, profile) },
+          { role: "system", content: lessonPrompt(track, level, topics, profile, gaps) },
           { role: "user", content: "Составь урок на сегодня." },
         ],
         label,
@@ -84,10 +91,10 @@ export async function POST(request: Request) {
   const learning = learningOf(account, track);
 
   switch (action) {
-    // Тест уровня: сервер сам сверяет ответы с ключами и сохраняет уровень в профиль.
+    // Срез знаний: сервер сверяет ответы с ключами, сохраняет уровень и точечные пробелы.
     case "placement": {
       const result = scorePlacement(track, body?.answers);
-      setLevel(account, track, result.level, "test");
+      setLevel(account, track, result.level, "test", result.gaps);
       return NextResponse.json({ result, learning: publicLearning(account, track) });
     }
 
@@ -113,6 +120,7 @@ export async function POST(request: Request) {
           learning.topics,
           `lesson ${track} ${account.id}`,
           profileLine(account),
+          learning.gaps ?? [],
         );
         saveLesson(account, track, lesson);
         return NextResponse.json({ learning: publicLearning(account, track) });
