@@ -212,12 +212,32 @@ export default function ChessBoard({
                 piece.color === "w" ? "chess-piece-w" : "chess-piece-b"
               }`}
             >
-              {GLYPH[piece.type]}
-              {"︎"}
+              {piece.type === "p" ? <Pawn white={piece.color === "w"} /> : GLYPH[piece.type]}
+              {piece.type !== "p" && "︎"}
             </motion.span>
           ))}
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+// Пешка — векторный силуэт: глиф ♟ на iOS и в Telegram рисуется эмодзи и остаётся
+// чёрным при любом цвете. Заливка — цвет стороны, у белой — тонкая тёмная обводка.
+function Pawn({ white }: { white: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 45 45"
+      className="h-[78%] w-[78%]"
+      fill="currentColor"
+      stroke={white ? "rgb(28 28 30)" : "none"}
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    >
+      <circle cx="22.5" cy="12" r="5" />
+      <path d="M17.5 18.5h10a1.5 1.5 0 0 1 0 3h-10a1.5 1.5 0 0 1 0-3z" />
+      <path d="M18.5 21.5h8c.5 4.5 2.5 8.5 5 12.5h-18c2.5-4 4.5-8 5-12.5z" />
+      <path d="M12 34h21a1.75 1.75 0 0 1 0 3.5H12a1.75 1.75 0 0 1 0-3.5z" />
+    </svg>
   );
 }
