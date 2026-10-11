@@ -15,6 +15,8 @@ export type Account = {
   kid: boolean;
   // Последнее творческое задание Мартины в Kids Art (разбор рисунка учитывает его).
   artTask: ArtTask | null;
+  // Заявку только что одобрили — показать праздничный поп-ап (один раз).
+  celebrate: boolean;
   // Уровень по CEFR в языковых треках (тест уровня или выбор вручную).
   levels: { spanish: Level | null; english: Level | null };
   // Администратор школы: доступ к /admin. Супер-админ (@r_design_space) получает заявки.

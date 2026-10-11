@@ -15,9 +15,9 @@ export async function POST(request: Request) {
 
   const updated = updateProfile(account.id, patch);
 
-  // Закрытая школа: после онбординга (или повторно — после отказа и паузы в сутки)
-  // уходит заявка супер-админу. VIP и админам заявка не нужна — submitApplication вернёт false.
-  if (updated.role && (patch.apply === true || patch.role) && submitApplication(updated, patch.applicationNote)) {
+  // Закрытая школа: заявка подаётся сама при первом входе (/api/me); здесь — повторно после
+  // отказа и паузы в сутки. VIP и админам заявка не нужна — submitApplication вернёт false.
+  if ((patch.apply === true || patch.role) && submitApplication(updated, patch.applicationNote)) {
     await notifyNewApplication(updated);
   }
 

@@ -13,10 +13,11 @@ import {
   grantPremium,
   isAdmin,
   isVip,
+  submitApplication,
   upsertAccount,
 } from "../lib/store.mjs";
 import { personaLine } from "../lib/prompts.mjs";
-import { applicationText, notifyDecision } from "../lib/notify.mjs";
+import { applicationText, notifyDecision, notifyNewApplication } from "../lib/notify.mjs";
 import { telegramBotToken } from "../lib/telegram-auth.mjs";
 import { startReminders } from "./reminders.mjs";
 import {
@@ -185,9 +186,11 @@ function enqueue(chatId, task) {
 async function askAssistant(user, userText, chatId, account) {
   // Имя из Telegram и, для VIP, подбадривающий тон — как в Mini App.
   const persona = personaLine({ name: displayName(account), vip: isVip(account) });
-  const system = persona ? `${systemInstruction}
+  const system = persona
+    ? `${systemInstruction}
 
-${persona}` : systemInstruction;
+${persona}`
+    : systemInstruction;
   const replyText = await groqChat(
     [{ role: "system", content: system }, ...user.history, { role: "user", content: userText }],
     `chat ${chatId}`,
@@ -269,6 +272,11 @@ function registerHandlers(bot) {
     const chatId = String(ctx.chat.id);
     users[chatId] = { history: [], personaVersion: PERSONA_VERSION };
     saveUsers();
+    // Новый пользователь: заявка в школу подаётся сразу и уходит супер-админу.
+    const account = getAccount(ctx.from.id);
+    if (account && accessStatus(account) === "none" && submitApplication(account)) {
+      await notifyNewApplication(account);
+    }
     // Красивый вход: баннер, описание, инлайн-кнопки и постоянное нижнее меню.
     await sendWelcome(ctx, getAccount(ctx.from.id), webAppUrl());
   });
@@ -293,8 +301,14 @@ function registerHandlers(bot) {
 
   // Telegram ID нужен для VIP-списка (VIP_TELEGRAM_IDS) — его не видно в интерфейсе Telegram.
   bot.command("myid", (ctx) =>
-    ctx.reply(`Ваш Telegram ID: ${ctx.from.id}${ctx.from.username ? `
-Username: @${ctx.from.username}` : ""}`),
+    ctx.reply(
+      `Ваш Telegram ID: ${ctx.from.id}${
+        ctx.from.username
+          ? `
+Username: @${ctx.from.username}`
+          : ""
+      }`,
+    ),
   );
 
   bot.command("reset", async (ctx) => {
@@ -362,10 +376,10 @@ Username: @${ctx.from.username}` : ""}`),
     }
     const decided = decideApplication(userId, decision, admin);
     await notifyDecision(decided);
-    await ctx.answerCbQuery(decision === "approved" ? "Принято" : "Отклонено");
+    await ctx.answerCbQuery(decision === "approved" ? "Одобрено, VIP-доступ выдан" : "Отклонено");
     try {
       await ctx.editMessageText(
-        `${applicationText(decided)}\n\n${decision === "approved" ? "✓ Принято" : "✕ Отклонено"} — ` +
+        `${applicationText(decided)}\n\n${decision === "approved" ? "✅ Одобрено · VIP-доступ выдан" : "✕ Отклонено"} — ` +
           (admin.username ? `@${admin.username}` : admin.firstName),
       );
     } catch {
@@ -469,7 +483,9 @@ export function startBot() {
     // стоит проверить в логах Railway, если бот ведёт себя «по-старому».
     botIdentity = bot.botInfo ? `@${bot.botInfo.username} (id ${bot.botInfo.id}, «${bot.botInfo.first_name}»)` : null;
     console.log(`Telegram-токен подключён к боту ${botIdentity ?? "(неизвестно)"}.`);
-    console.log(`Mini App URL для кнопок: ${webAppUrl() ?? "НЕ ЗАДАН — задайте WEBAPP_URL или Generate Domain в Railway"}.`);
+    console.log(
+      `Mini App URL для кнопок: ${webAppUrl() ?? "НЕ ЗАДАН — задайте WEBAPP_URL или Generate Domain в Railway"}.`,
+    );
     configureMenuButton(bot);
     startReminders(bot, openAppKeyboard);
   });
