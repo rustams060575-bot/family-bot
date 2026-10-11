@@ -18,7 +18,10 @@ type Analysis = {
 };
 
 type Source = "photo" | "canvas";
-const MAX_SIDE = 1600;
+// 1024 px и JPEG 0.8 — ~150–300 КБ вместо 3–5 МБ с iPhone: загрузка не упирается в таймаут,
+// а для разбора цветов и деталей детского рисунка этого достаточно.
+const MAX_SIDE = 1024;
+const JPEG_QUALITY = 0.8;
 const SENDABLE = ["image/jpeg", "image/png", "image/webp"];
 
 // Мягкие реплики Мартины вместо системных ошибок.
@@ -26,8 +29,8 @@ const LOOK_AGAIN = "Ой, я не успела как следует рассм�
 const CANT_OPEN = "Ой, это фото у меня не открылось. Сфотографируй рисунок ещё разок, пожалуйста!";
 const EMPTY_CANVAS = "Холст пока пустой — нарисуй что-нибудь, и я сразу посмотрю!";
 
-// Фото с телефона бывают по 12 Мп и в HEIC — перекодируем в JPEG до 1600 px по длинной
-// стороне: для разбора этого достаточно, загрузка в разы быстрее, а формат понятен любому Vision.
+// Фото с телефона бывают по 12 Мп и в HEIC — перекодируем в JPEG до 1024 px по длинной
+// стороне: формат понятен любому Vision, а загрузка быстрая даже на мобильном интернете.
 async function downscale(file: Blob): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
@@ -42,7 +45,7 @@ async function downscale(file: Blob): Promise<Blob> {
     canvas.width = Math.round(image.naturalWidth * scale);
     canvas.height = Math.round(image.naturalHeight * scale);
     canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
     if (!blob) throw new Error("toBlob вернул null");
     return blob;
   } finally {
@@ -115,7 +118,9 @@ export default function ArtAnalyzer() {
       setNote(EMPTY_CANVAS);
       return;
     }
-    const blob = await canvasRef.current?.exportBlob();
+    // Холст на ретине экспортируется в 2–3× размере — сжимаем так же, как фото.
+    const raw = await canvasRef.current?.exportBlob();
+    const blob = raw ? await downscale(raw).catch(() => raw) : null;
     if (!blob) {
       setNote(LOOK_AGAIN);
       return;
