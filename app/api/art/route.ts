@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authenticate, badRequest, requireAccess, unauthorized } from "@/lib/server/session";
 import { countArtAnalysis, displayName, isKid, recordActivity, setArtTask } from "@/lib/store.mjs";
 import { artPrompt } from "@/lib/prompts.mjs";
+import { profileLine, saveArtwork } from "@/lib/learnerProfile.mjs";
 import { artLessonLine, artMethodLine, artOf, completeArtLesson } from "@/lib/artSchool.mjs";
 import { analyzeImageJson, sniffImageType, visionChain, visionProvider } from "@/lib/ai.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
@@ -83,6 +84,7 @@ async function handle(request: Request) {
   const persona = {
     name: isKid(account) ? displayName(account) : "",
     method: artMethodLine(account),
+    profile: profileLine(account),
     lesson: artLessonLine(account),
   };
 
@@ -106,7 +108,17 @@ async function handle(request: Request) {
     const completedLesson = lessonFinal ? completeArtLesson(account) : null;
     // «Новое задание» из разбора становится текущим — следующий рисунок оценится по нему.
     setArtTask(account, { title: nextTask.title, steps: nextTask.steps, materials: nextTask.materials });
+    // Работа и комментарий Мартины сохраняются в профиль — для «Прогресса ученика».
+    const artworkId = saveArtwork(account, buffer, mimeType, {
+      title: text(parsed.title),
+      praise: text(parsed.praise),
+      question: text(parsed.question),
+      taskNote: reviewedTask ? text(parsed.taskNote) : "",
+      task: reviewedTask,
+      lesson: completedLesson?.title ?? null,
+    });
     return NextResponse.json({
+      artworkId,
       lessonCompleted: completedLesson ? completedLesson.title : null,
       task: reviewedTask,
       taskNote: reviewedTask ? text(parsed.taskNote) : "",

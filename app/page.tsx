@@ -7,6 +7,7 @@ import { useApp } from "@/components/AppProvider";
 import SubscriptionCard from "@/components/SubscriptionCard";
 import ThemeToggle from "@/components/ThemeToggle";
 import SpeakButton from "@/components/SpeakButton";
+import DailyTrack from "@/components/DailyTrack";
 import { CRM_COPY } from "@/components/CrmPanel";
 import { ROLES, TRACKS, kidsTrackName, trackById, type Track } from "@/lib/client/tracks";
 import { press, rise, stagger } from "@/lib/motion";
@@ -85,6 +86,8 @@ function Dashboard() {
   const role = ROLES.find((item) => item.id === account.role);
   const tracks = kid ? TRACKS.filter((track) => track.id !== "translate") : TRACKS;
   const tools = [
+    // Дашборд родителя: успехи, работы с отзывами Мартины, языковые темы.
+    { href: "/progress", icon: "↗", title: "Прогресс ученика" },
     ...(!kid
       ? [
           {
@@ -159,6 +162,9 @@ function Dashboard() {
           </motion.div>
         </Link>
       </motion.div>
+
+      {/* Дневной трек: главный урок по арту + микро-практика по языку */}
+      <DailyTrack />
 
       <motion.section variants={rise} className="mt-8">
         <h2 className="label px-4 pb-2">Обучение</h2>

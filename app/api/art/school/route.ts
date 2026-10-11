@@ -8,6 +8,7 @@ import {
   unauthorized,
 } from "@/lib/server/session";
 import { refund } from "@/lib/store.mjs";
+import { profileLine } from "@/lib/learnerProfile.mjs";
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import {
@@ -39,7 +40,7 @@ async function generateLesson(account: any, theme: string) {
     try {
       const reply = await groqChat(
         [
-          { role: "system", content: artLessonPrompt(account, theme) },
+          { role: "system", content: artLessonPrompt(account, theme, profileLine(account)) },
           { role: "user", content: "Составь урок." },
         ],
         `art lesson ${account.id}`,

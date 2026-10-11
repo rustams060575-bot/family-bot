@@ -12,6 +12,7 @@ import { findStudent, recentLessonsText } from "@/lib/crm.mjs";
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { crmPrompt, kidsPrompt, textPrompt, voicePrompt } from "@/lib/prompts.mjs";
 import { learnerLine, learningOf, lessonPracticeLine } from "@/lib/learning.mjs";
+import { profileLine } from "@/lib/learnerProfile.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 
 export const runtime = "nodejs";
@@ -58,12 +59,14 @@ export async function POST(request: Request) {
     if (student) system = crmPrompt({ ...student, recent: recentLessonsText(student) }, account.role, persona);
   } else if (language && kid) {
     // Детский режим: один игровой сценарий на любую тему, голосом и текстом.
-    system = kidsPrompt(track, persona);
+    system = kidsPrompt(track, { ...persona, profile: profileLine(account) });
   } else if (language) {
-    // Память Мартины: уровень ученика, пройденные темы и урок дня — сложность речи под уровень.
+    // Память Мартины: карточка ученика, уровень, пройденные темы и урок дня.
     const lesson = topic === "lesson" ? learningOf(account, track).lesson : null;
     if (topic === "lesson" && !lesson) return badRequest("Урок дня ещё не создан.");
-    const context = [learnerLine(account, track), lessonPracticeLine(lesson)].filter(Boolean).join("\n\n");
+    const context = [profileLine(account), learnerLine(account, track), lessonPracticeLine(lesson)]
+      .filter(Boolean)
+      .join("\n\n");
     system = (mode === "voice" ? voicePrompt : textPrompt)(track, topic, account.role, persona, context);
   }
   if (!system) return badRequest("Неизвестный трек или тема.");

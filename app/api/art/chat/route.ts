@@ -11,6 +11,7 @@ import { displayName, isKid, publicAccount, recordActivity, refund, setArtTask }
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { artChatPrompt } from "@/lib/prompts.mjs";
+import { profileLine } from "@/lib/learnerProfile.mjs";
 import { artLessonLine, artMethodLine } from "@/lib/artSchool.mjs";
 
 export const runtime = "nodejs";
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
   const persona = {
     name: isKid(account) ? displayName(account) : "",
     method: artMethodLine(account),
+    profile: profileLine(account),
     lesson: artLessonLine(account),
   };
   try {

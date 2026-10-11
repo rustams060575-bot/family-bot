@@ -19,6 +19,7 @@ const config: Config = {
         dim: "rgb(var(--dim) / <alpha-value>)",
         champagne: "rgb(var(--champagne) / <alpha-value>)",
         danger: "rgb(var(--danger) / <alpha-value>)",
+        chart: "rgb(var(--chart) / <alpha-value>)",
       },
       fontFamily: {
         sans: ["var(--font-sans)"],

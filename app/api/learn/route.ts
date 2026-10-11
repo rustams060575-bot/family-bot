@@ -8,6 +8,7 @@ import {
   unauthorized,
 } from "@/lib/server/session";
 import { recordActivity, refund } from "@/lib/store.mjs";
+import { profileLine } from "@/lib/learnerProfile.mjs";
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import {
@@ -46,13 +47,13 @@ export async function GET(request: Request) {
 }
 
 // Генерация урока дня: до двух попыток — модель изредка присылает неполный JSON.
-async function generateLesson(track: string, level: string, topics: string[], label: string) {
+async function generateLesson(track: string, level: string, topics: string[], label: string, profile: string) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const reply = await groqChat(
         [
-          { role: "system", content: lessonPrompt(track, level, topics) },
+          { role: "system", content: lessonPrompt(track, level, topics, profile) },
           { role: "user", content: "Составь урок на сегодня." },
         ],
         label,
@@ -106,7 +107,13 @@ export async function POST(request: Request) {
       const rejected = consumeOrReject(account, "ai");
       if (rejected) return rejected;
       try {
-        const lesson = await generateLesson(track, learning.level, learning.topics, `lesson ${track} ${account.id}`);
+        const lesson = await generateLesson(
+          track,
+          learning.level,
+          learning.topics,
+          `lesson ${track} ${account.id}`,
+          profileLine(account),
+        );
         saveLesson(account, track, lesson);
         return NextResponse.json({ learning: publicLearning(account, track) });
       } catch (error) {
