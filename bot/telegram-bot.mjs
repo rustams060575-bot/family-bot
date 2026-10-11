@@ -299,6 +299,16 @@ function registerHandlers(bot) {
   bot.command("app", (ctx) => ctx.reply(webAppUrl() ? "ATA Academy:" : APP_NOT_PUBLISHED, openKeyboard(webAppUrl())));
   bot.command("menu", (ctx) => ctx.reply("Меню — внизу 👇", MAIN_MENU));
 
+  // Админ-панель школы (/admin в Mini App) — только для супер-админа и админов.
+  bot.command("admin", (ctx) => {
+    if (!isAdmin(getAccount(ctx.from.id))) return ctx.reply("Админ-панель доступна только администратору школы.");
+    const url = webAppUrl();
+    if (!url) return ctx.reply(APP_NOT_PUBLISHED);
+    return ctx.reply("Админ-панель ATA Academy: заявки, доступы и VIP.", {
+      ...Markup.inlineKeyboard([[Markup.button.webApp("🛠 Открыть админ-панель", `${url}/admin`)]]),
+    });
+  });
+
   // Telegram ID нужен для VIP-списка (VIP_TELEGRAM_IDS) — его не видно в интерфейсе Telegram.
   bot.command("myid", (ctx) =>
     ctx.reply(
