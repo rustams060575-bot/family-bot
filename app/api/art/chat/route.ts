@@ -11,6 +11,7 @@ import { displayName, isKid, publicAccount, recordActivity, refund, setArtTask }
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { artChatPrompt } from "@/lib/prompts.mjs";
+import { artLessonLine, artMethodLine } from "@/lib/artSchool.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,12 @@ export async function POST(request: Request) {
   const rejected = consumeOrReject(account, "ai");
   if (rejected) return rejected;
 
-  const persona = { name: isKid(account) ? displayName(account) : "" };
+  // Возраст, программа группы и текущий урок — Мартина говорит на уровне ученика.
+  const persona = {
+    name: isKid(account) ? displayName(account) : "",
+    method: artMethodLine(account),
+    lesson: artLessonLine(account),
+  };
   try {
     const reply = await groqChat(
       [{ role: "system", content: artChatPrompt(persona, account.artTask ?? null) }, ...messages],

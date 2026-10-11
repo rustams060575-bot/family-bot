@@ -5,10 +5,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import DrawingCanvas, { type DrawingCanvasHandle } from "@/components/DrawingCanvas";
 import { ApiError, apiFetch } from "@/lib/client/api";
-import { martinaGreeting } from "@/lib/client/tracks";
 import SpeakButton from "@/components/SpeakButton";
 import MartinaNote from "@/components/MartinaNote";
 import ArtChat from "@/components/ArtChat";
+import ArtSchool from "@/components/ArtSchool";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Analysis = {
@@ -21,6 +21,8 @@ type Analysis = {
   // Задание Мартины, по которому оценён рисунок, и её отзыв о нём.
   task: string | null;
   taskNote: string;
+  // Урок арт-школы, который завершил этот разбор.
+  lessonCompleted: string | null;
 };
 
 type Source = "photo" | "canvas";
@@ -94,7 +96,6 @@ export default function ArtAnalyzer() {
   const galleryInput = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
-  const kid = !!account?.kid;
 
   useEffect(
     () => () => {
@@ -220,9 +221,19 @@ export default function ArtAnalyzer() {
     );
   }
 
-  const greeting = kid
-    ? `${martinaGreeting(account?.firstName)} Покажи мне свой рисунок — мне очень интересно, что ты нарисовал!`
-    : `${martinaGreeting()} Покажите мне рисунок ребёнка — я отмечу, что получилось, и предложу новое задание.`;
+  // Камера и холст — общие для урока арт-школы и заданий из чата.
+  const openCamera = () => {
+    setSource("photo");
+    setNote(null);
+    // Вызов в том же нажатии — иначе WebView не откроет камеру.
+    cameraInput.current?.click();
+  };
+  const openCanvas = () => {
+    haptic("selection");
+    setSource("canvas");
+    setNote(null);
+    setTimeout(() => sourceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  };
 
   return (
     <div>
@@ -234,24 +245,12 @@ export default function ArtAnalyzer() {
           <Result key="result" analysis={analysis} imageUrl={image?.url} onAgain={startOver} />
         ) : (
           <motion.div key="pick" variants={rise} initial="hidden" animate="show" exit="leave">
-            <MartinaNote text={greeting} />
+            {/* Арт-школа: возраст → урок по программе → три этапа; Мартина ведёт сама */}
+            <ArtSchool onPhoto={openCamera} onCanvas={openCanvas} />
 
             {/* Чат с Мартиной: вопросы, пожелания и творческие задания — текстом или голосом */}
-            <div className="mt-4">
-              <ArtChat
-                onPhoto={() => {
-                  setSource("photo");
-                  setNote(null);
-                  // Вызов в том же нажатии — иначе WebView не откроет камеру.
-                  cameraInput.current?.click();
-                }}
-                onCanvas={() => {
-                  haptic("selection");
-                  setSource("canvas");
-                  setNote(null);
-                  setTimeout(() => sourceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
-                }}
-              />
+            <div className="mt-6">
+              <ArtChat onPhoto={openCamera} onCanvas={openCanvas} />
             </div>
 
             {/* Источник рисунка — сегментированный контрол iOS */}
@@ -463,6 +462,21 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
         <Sparkle delay={0.5} size={16} className="-top-2 right-2" />
         <Sparkle delay={0.7} size={10} className="right-8 top-2" />
       </motion.div>
+
+      {analysis.lessonCompleted && (
+        <motion.div variants={rise} className="glass glass-accent flex items-center gap-3 p-4">
+          <span
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-champagne text-title3"
+            aria-hidden
+          >
+            🎓
+          </span>
+          <div>
+            <p className="text-footnote font-semibold text-champagne">Урок арт-школы пройден</p>
+            <p className="text-headline font-semibold">{analysis.lessonCompleted}</p>
+          </div>
+        </motion.div>
+      )}
 
       {analysis.task && analysis.taskNote && (
         <motion.div variants={rise} className="glass glass-accent px-4 pb-1 pt-4">

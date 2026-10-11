@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authenticate, badRequest, requireAccess, unauthorized } from "@/lib/server/session";
 import { countArtAnalysis, displayName, isKid, recordActivity, setArtTask } from "@/lib/store.mjs";
 import { artPrompt } from "@/lib/prompts.mjs";
+import { artLessonLine, artMethodLine, artOf, completeArtLesson } from "@/lib/artSchool.mjs";
 import { analyzeImageJson, sniffImageType, visionChain, visionProvider } from "@/lib/ai.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
 
@@ -74,10 +75,21 @@ async function handle(request: Request) {
   // Разборы безлимитны: никакого списания и проверки дневной квоты — только статистика.
   countArtAnalysis(account);
 
+  // Урок арт-школы на финальном этапе — рисунок оценивается как работа по уроку;
+  // иначе — по последнему заданию из чата или прошлого разбора.
+  const lesson = artOf(account).lesson;
+  const lessonFinal = !!lesson && !lesson.completedAt && lesson.stage >= 2;
+  const task = lessonFinal ? { title: lesson.title, idea: lesson.concept } : (account.artTask ?? null);
+  const persona = {
+    name: isKid(account) ? displayName(account) : "",
+    method: artMethodLine(account),
+    lesson: artLessonLine(account),
+  };
+
   try {
     const parsed: any = await analyzeImageJson(
       // Мартина помнит своё последнее задание и оценивает рисунок с его учётом.
-      artPrompt({ name: isKid(account) ? displayName(account) : "" }, account.artTask ?? null),
+      artPrompt(persona, task),
       buffer,
       mimeType,
       usable,
@@ -89,10 +101,13 @@ async function handle(request: Request) {
     recordActivity(account);
 
     const nextTask = parsed.nextTask ?? {};
-    const reviewedTask = account.artTask?.title ?? null;
+    const reviewedTask = task?.title ?? null;
+    // Разбор на финальном этапе завершает урок арт-школы.
+    const completedLesson = lessonFinal ? completeArtLesson(account) : null;
     // «Новое задание» из разбора становится текущим — следующий рисунок оценится по нему.
     setArtTask(account, { title: nextTask.title, steps: nextTask.steps, materials: nextTask.materials });
     return NextResponse.json({
+      lessonCompleted: completedLesson ? completedLesson.title : null,
       task: reviewedTask,
       taskNote: reviewedTask ? text(parsed.taskNote) : "",
       title: text(parsed.title),
