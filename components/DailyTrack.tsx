@@ -10,6 +10,7 @@ import { enter, exit, press, rise } from "@/lib/motion";
 
 // «Дневной трек»: при входе — 1 главный урок по арту (из арт-школы Мартины)
 // и 1 микро-практика по языку (3 слова + вопрос). Мартина готовит практику сама.
+// Третий пункт — шахматный челлендж Лео: задачка дня на 2–3 минуты (решается на /chess).
 
 type Micro = {
   track: "english" | "spanish";
@@ -22,6 +23,14 @@ type Daily = {
   date: string;
   art: { needsAge: boolean; title: string | null; stage: number | null; nextTheme: string | null; done: boolean };
   lang: { track: "english" | "spanish"; micro: Micro | null; done: boolean; correct: boolean | null };
+  chess: {
+    needsSurvey: boolean;
+    needsAge: boolean;
+    title: string | null;
+    theme?: string | null;
+    done: boolean;
+    correct: boolean | null;
+  };
 };
 
 const LANG_LABEL = { english: "English", spanish: "Español" };
@@ -58,7 +67,7 @@ export default function DailyTrack() {
   }, [daily, preparing, failed]);
 
   if (!daily) return null;
-  const doneCount = Number(daily.art.done) + Number(daily.lang.done);
+  const doneCount = Number(daily.art.done) + Number(daily.lang.done) + Number(daily.chess.done);
   const micro = daily.lang.micro;
 
   async function answer(option: number) {
@@ -86,11 +95,19 @@ export default function DailyTrack() {
         ? `«${daily.art.title}» · этап ${(daily.art.stage ?? 0) + 1} из 3`
         : `Тема: «${daily.art.nextTheme ?? "…"}»`;
 
+  const chessCaption = daily.chess.done
+    ? daily.chess.correct
+      ? "Задача решена ✓"
+      : "Разобрали с Лео ✓"
+    : daily.chess.needsAge || daily.chess.needsSurvey
+      ? "Ответь Лео на два вопроса — и начнём"
+      : `«${daily.chess.title ?? "…"}» · 2–3 минуты`;
+
   return (
     <motion.section variants={rise} className="mt-6" aria-label="Дневной трек">
       <div className="flex items-baseline justify-between px-4 pb-2">
         <h2 className="label">Дневной трек</h2>
-        <span className="text-footnote tabular-nums text-dim">{doneCount} из 2</span>
+        <span className="text-footnote tabular-nums text-dim">{doneCount} из 3</span>
       </div>
       <div className="glass overflow-hidden">
         {/* 1. Главный урок по арту */}
@@ -106,7 +123,20 @@ export default function DailyTrack() {
         </Link>
         <div className="hairline ml-[3.75rem]" />
 
-        {/* 2. Микро-практика по языку */}
+        {/* 2. Шахматный челлендж Лео */}
+        <Link href="/chess" onClick={() => haptic("light")} className="block active:bg-tint/[0.06]">
+          <div className="flex min-h-[3.75rem] items-center gap-3 px-4 py-3">
+            <Check done={daily.chess.done} icon={"♟︎"} />
+            <div className="min-w-0 flex-1">
+              <p className="text-body font-semibold">Шахматный челлендж от Лео</p>
+              <p className="truncate text-subhead text-mist">{chessCaption}</p>
+            </div>
+            <Chevron />
+          </div>
+        </Link>
+        <div className="hairline ml-[3.75rem]" />
+
+        {/* 3. Микро-практика по языку */}
         <button
           onClick={() => {
             haptic("light");

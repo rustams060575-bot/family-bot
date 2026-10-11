@@ -10,7 +10,7 @@ import { apiFetch, apiJson } from "@/lib/client/api";
 import { enter, exit, press, rise, softSpring, stagger } from "@/lib/motion";
 
 // «Прогресс ученика» (Parent Analytics): карточка ученика, динамика занятий,
-// сохранённые рисунки с комментариями Мартины и пройденные языковые темы.
+// сохранённые рисунки с комментариями Мартины, шахматы с Лео и пройденные языковые темы.
 
 type Card = {
   age: number | null;
@@ -18,6 +18,17 @@ type Card = {
   art_level: string;
   lang_level: { spanish: string | null; english: string | null };
   created_art_count: number;
+  chess_level: "novice" | "amateur" | "strategist" | null;
+  chess_solved: number;
+};
+type ChessProgress = {
+  level: string | null;
+  levelLabel: string | null;
+  band: string | null;
+  solved: number;
+  lessonsDone: number;
+  topics: { topic: string; title: string; date: string; correct: boolean }[];
+  nextTopic: string | null;
 };
 type Artwork = {
   id: string;
@@ -46,6 +57,7 @@ type Progress = {
     nextTheme: string | null;
   };
   languages: { english: LangProgress; spanish: LangProgress };
+  chess: ChessProgress;
   artworks: Artwork[];
 };
 
@@ -120,6 +132,7 @@ function ProgressScreen() {
               {[
                 ["Возраст", progress.card.age ? `${progress.card.age}` : "не указан"],
                 ["Уровень в арте", `${progress.card.art_level}${progress.art.band ? ` · ${progress.art.band}` : ""}`],
+                ["Уровень в шахматах", progress.chess.levelLabel ?? "опрос Лео не пройден"],
                 ["English", progress.card.lang_level.english ?? "тест не пройден"],
                 ["Español", progress.card.lang_level.spanish ?? "тест не пройден"],
               ].map(([label, value], index) => (
@@ -183,6 +196,59 @@ function ProgressScreen() {
                 Здесь появятся рисунки с отзывами Мартины — после первого разбора в Kids Art.
               </div>
             )}
+          </motion.section>
+
+          {/* Шахматы с Лео: уровень, решённые задачи, пройденные темы */}
+          <motion.section variants={rise}>
+            <h2 className="label px-4 pb-2">Шахматы с Лео</h2>
+            <div className="glass overflow-hidden">
+              <div className="grid grid-cols-3">
+                {[
+                  [progress.chess.levelLabel ?? "—", "уровень"],
+                  [progress.chess.solved, "задач решено"],
+                  [progress.chess.lessonsDone, "тем пройдено"],
+                ].map(([value, label], index) => (
+                  <div
+                    key={label}
+                    className={`flex flex-col items-center px-2 py-4 text-center ${
+                      index > 0 ? "border-l border-[var(--separator)]" : ""
+                    }`}
+                  >
+                    <span
+                      className={`font-bold tabular-nums ${typeof value === "number" ? "text-title1" : "text-title3 leading-[2.125rem]"}`}
+                    >
+                      {value}
+                    </span>
+                    <span className="mt-0.5 text-footnote text-mist">{label}</span>
+                  </div>
+                ))}
+              </div>
+              {progress.chess.topics.map((item) => (
+                <div key={`${item.date}-${item.title}`}>
+                  <div className="hairline ml-4" />
+                  <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-body">{item.title}</p>
+                      <p className="truncate text-footnote text-dim">
+                        {item.topic} · {shortDate(item.date)}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-footnote font-semibold ${
+                        item.correct ? "bg-champagne text-ink" : "bg-fill text-mist"
+                      }`}
+                    >
+                      {item.correct ? "верно" : "разобрано"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="px-4 pt-2 text-footnote text-dim">
+              {progress.chess.level
+                ? `${progress.chess.band ? `Программа ${progress.chess.band}. ` : ""}Следующая тема: «${progress.chess.nextTopic ?? "…"}»`
+                : "Лео определит уровень после двух вопросов в разделе «Шахматы с Лео»."}
+            </p>
           </motion.section>
 
           {/* Языковые темы */}

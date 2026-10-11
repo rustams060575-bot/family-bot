@@ -52,12 +52,14 @@ function Row({
   icon,
   title,
   caption,
+  badge,
   first,
 }: {
   href: string;
   icon: string;
   title: string;
   caption?: string;
+  badge?: string;
   first: boolean;
 }) {
   const { haptic } = useApp();
@@ -72,6 +74,11 @@ function Row({
           <p className="text-body">{title}</p>
           {caption && <p className="truncate text-subhead text-mist">{caption}</p>}
         </div>
+        {badge && (
+          <span className="shrink-0 rounded-full bg-champagne/[0.16] px-2 py-0.5 text-caption font-semibold text-champagne">
+            {badge}
+          </span>
+        )}
         <Chevron />
       </div>
     </Link>
@@ -85,6 +92,27 @@ function Dashboard() {
   const primary = trackById(account.track) ?? TRACKS[0];
   const role = ROLES.find((item) => item.id === account.role);
   const tracks = kid ? TRACKS.filter((track) => track.id !== "translate") : TRACKS;
+  // Обучение: треки + «Шахматы с Лео» сразу после Арта (наряду с Артом и языками).
+  const learning = tracks.flatMap((track) => {
+    const row = {
+      href: track.href,
+      icon: track.monogram,
+      title: kid ? kidsTrackName(track) : track.name,
+      caption: kid ? (track.id === "art" ? "Покажи рисунок Мартине" : "Играем с Мартиной") : track.tagline,
+      badge: undefined as string | undefined,
+    };
+    if (track.id !== "art") return [row];
+    return [
+      row,
+      {
+        href: "/chess",
+        icon: "♟︎",
+        title: "Шахматы с Лео",
+        caption: kid ? "Суперсилы фигур и задачки" : "Задача дня, уроки, тактика и логика",
+        badge: "Новое",
+      },
+    ];
+  });
   const tools = [
     // Дашборд родителя: успехи, работы с отзывами Мартины, языковые темы.
     { href: "/progress", icon: "↗", title: "Прогресс ученика" },
@@ -163,21 +191,14 @@ function Dashboard() {
         </Link>
       </motion.div>
 
-      {/* Дневной трек: главный урок по арту + микро-практика по языку */}
+      {/* Дневной трек: урок по арту + шахматный челлендж Лео + микро-практика по языку */}
       <DailyTrack />
 
       <motion.section variants={rise} className="mt-8">
         <h2 className="label px-4 pb-2">Обучение</h2>
         <div className="glass overflow-hidden">
-          {tracks.map((track, index) => (
-            <Row
-              key={track.id}
-              href={track.href}
-              icon={track.monogram}
-              title={kid ? kidsTrackName(track) : track.name}
-              caption={kid ? (track.id === "art" ? "Покажи рисунок Мартине" : "Играем с Мартиной") : track.tagline}
-              first={index === 0}
-            />
+          {learning.map((item, index) => (
+            <Row key={item.href} {...item} first={index === 0} />
           ))}
         </div>
       </motion.section>

@@ -155,6 +155,31 @@ button:not(:disabled):active {
     background: rgb(255 255 255);
   }
 
+  /* Шахматная доска Лео: тёплые нейтрали шампани, одинаковые в обеих темах, чтобы
+     белые и чёрные фигуры читались всегда. Фигуры — глифы с тонкой обводкой. */
+  .chess-light {
+    background: rgb(236 226 206);
+  }
+  .chess-dark {
+    background: rgb(176 146 100);
+  }
+  .chess-piece {
+    font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols 2", "DejaVu Sans", serif;
+    font-variant-emoji: text;
+    line-height: 1;
+  }
+  .chess-piece-w {
+    color: rgb(255 255 255);
+    text-shadow:
+      0 0 1px rgb(28 28 30),
+      0 0 1px rgb(28 28 30),
+      0 1px 2px rgb(0 0 0 / 0.35);
+  }
+  .chess-piece-b {
+    color: rgb(28 28 30);
+    text-shadow: 0 1px 1px rgb(255 255 255 / 0.25);
+  }
+
   /* Детские разделы — SF Pro Rounded. */
   .font-rounded,
   .font-rounded * {

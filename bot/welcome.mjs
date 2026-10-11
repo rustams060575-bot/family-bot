@@ -48,6 +48,7 @@ export function welcomeCaption(account, appPublished) {
     "<b>Что вас ждёт</b>",
     "🇪🇸 Испанский и 🇬🇧 английский — живые занятия голосом",
     "🎨 Kids Art — Мартина разберёт рисунок по фото",
+    "♟️ Шахматы с Лео — задачка дня, уроки и логика",
     "🌐 Переводчик — узбекский, русский, испанский, английский",
     "",
     "<b>Как начать</b>",
@@ -73,6 +74,7 @@ export function aboutText() {
     "• <b>ATA Spanish</b> — срез знаний, грамматика, интенсивы",
     "• <b>ATA English</b> — разговор, адаптация, идиомы",
     "• <b>ATA Kids Art</b> — разбор детских рисунков и новые задания",
+    "• <b>Шахматы & Логика с Лео</b> — наставник Лео: суперсилы фигур, тактика, маты в 1–2 хода",
     "• <b>ATA Translate</b> — перевод с учётом тона",
     "",
     "<b>Как мы учим</b>",
@@ -85,6 +87,7 @@ export function welcomeKeyboard(appUrl) {
   if (appUrl) {
     rows.push([Markup.button.webApp("🚀 Запустить ATA Academy", appUrl)]);
     rows.push([Markup.button.webApp("🎨 Разбор рисунка Мартиной", `${appUrl}/art`)]);
+    rows.push([Markup.button.webApp("♟️ Шахматы с Лео", `${appUrl}/chess`)]);
   }
   rows.push([Markup.button.callback("ℹ️ О нашей Академии", ABOUT_ACTION)]);
   return Markup.inlineKeyboard(rows);
