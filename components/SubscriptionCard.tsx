@@ -61,7 +61,6 @@ export default function SubscriptionCard({ variant = "full", onClose }: Props) {
     premiumAi === null
       ? `Занятия с ИИ без лимита — вместо ${offer.limits.free.ai} в день`
       : `${premiumAi} занятий с ИИ в день вместо ${offer.limits.free.ai}`,
-    `${offer.limits.premium.art} разборов рисунков в день вместо ${offer.limits.free.art}`,
     "Живой голос репетитора OpenAI вместо системного голоса телефона",
     "Заморозка стрика: один пропущенный день в неделю не обнуляет серию",
   ];
@@ -141,7 +140,6 @@ export default function SubscriptionCard({ variant = "full", onClose }: Props) {
 
       <motion.div variants={rise} className="mt-6 space-y-4">
         <Meter label="Занятия сегодня" used={account.usage.ai} limit={account.limits.ai} />
-        {variant === "full" && <Meter label="Разборы рисунков" used={account.usage.art} limit={account.limits.art} />}
       </motion.div>
 
       {!premium && (

@@ -21,7 +21,8 @@ export type Account = {
   premiumUntil: string | null;
   usage: { ai: number; art: number };
   // ai: null — без дневного лимита.
-  limits: { ai: number | null; art: number };
+  // art: всегда null — разборы рисунков безлимитны.
+  limits: { ai: number | null; art: null };
   streak: { count: number; activeToday: boolean };
   reminders: { enabled: boolean; hour: number };
 };
@@ -29,7 +30,7 @@ export type Account = {
 export type Offer = {
   priceStars: number | null;
   days: number;
-  limits: Record<Plan, { ai: number | null; art: number }>;
+  limits: Record<Plan, { ai: number | null; art: null }>;
 };
 
 export type Features = { tts: boolean; vision: boolean };

@@ -37,7 +37,7 @@ export function unauthorized() {
 
 // Списывает действие из дневного лимита; при исчерпании — 402 с данными для
 // плашки Premium на клиенте.
-export function consumeOrReject(account: Account, kind: "ai" | "art") {
+export function consumeOrReject(account: Account, kind: "ai") {
   const result = consume(account, kind);
   if (result.ok) return null;
   return NextResponse.json(
@@ -45,10 +45,7 @@ export function consumeOrReject(account: Account, kind: "ai" | "art") {
       error: "limit",
       kind,
       limit: result.limit,
-      message:
-        kind === "art"
-          ? "Бесплатные разборы рисунков на сегодня закончились."
-          : "Бесплатные занятия на сегодня закончились.",
+      message: "Бесплатные занятия на сегодня закончились.",
     },
     { status: 402 },
   );

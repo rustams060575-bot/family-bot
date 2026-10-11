@@ -166,7 +166,6 @@ export default function ArtAnalyzer() {
     );
   }
 
-  const left = account ? Math.max(0, account.limits.art - account.usage.art) : 0;
   const greeting = kid
     ? `${martinaGreeting(account?.firstName)} Покажи мне свой рисунок — мне очень интересно, что ты нарисовал!`
     : `${martinaGreeting()} Покажите мне рисунок ребёнка — я отмечу, что получилось, и предложу новое задание.`;
@@ -299,8 +298,6 @@ export default function ArtAnalyzer() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {account && <p className="mt-4 text-center text-footnote text-dim">Разборов сегодня: {left} из {account.limits.art}</p>}
           </motion.div>
         )}
       </AnimatePresence>

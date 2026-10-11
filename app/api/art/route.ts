@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { authenticate, badRequest, consumeOrReject, requireAccess, unauthorized } from "@/lib/server/session";
-import { displayName, isKid, recordActivity, refund } from "@/lib/store.mjs";
+import { authenticate, badRequest, requireAccess, unauthorized } from "@/lib/server/session";
+import { countArtAnalysis, displayName, isKid, recordActivity } from "@/lib/store.mjs";
 import { artPrompt } from "@/lib/prompts.mjs";
 import { analyzeImageJson, sniffImageType, visionChain, visionProvider } from "@/lib/ai.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
@@ -56,8 +56,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const rejected = consumeOrReject(account, "art");
-  if (rejected) return rejected;
+  // Разборы безлимитны: никакого списания и проверки дневной квоты — только статистика.
+  countArtAnalysis(account);
 
   try {
     const parsed: any = await analyzeImageJson(
@@ -68,7 +68,6 @@ export async function POST(request: Request) {
     );
 
     if (text(parsed.notDrawing)) {
-      refund(account, "art");
       return NextResponse.json({ error: "not_a_drawing", message: text(parsed.notDrawing) }, { status: 422 });
     }
     recordActivity(account);
@@ -96,7 +95,6 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    refund(account, "art");
     logDetailedError(`Mini App: анализ рисунка не удался (user ${account.id}, цепочка: ${visionChain()})`, error);
     // Причина (без ключей и тела ответа) — для консоли Mini App; ребёнок видит мягкую фразу Мартины.
     const reasons: string[] = (error as any)?.visionReasons ?? [];
