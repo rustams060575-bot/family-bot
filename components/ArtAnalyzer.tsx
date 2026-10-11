@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useInView } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import DrawingCanvas, { type DrawingCanvasHandle } from "@/components/DrawingCanvas";
-import { ApiError, apiFetch } from "@/lib/client/api";
+import { ApiError, apiFetch, apiJson } from "@/lib/client/api";
+import type { Account } from "@/lib/client/types";
 import SpeakButton from "@/components/SpeakButton";
 import MartinaNote from "@/components/MartinaNote";
 import ArtChat from "@/components/ArtChat";
 import ArtSchool from "@/components/ArtSchool";
+import MartinaAnswer from "@/components/MartinaAnswer";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Analysis = {
@@ -245,6 +247,9 @@ export default function ArtAnalyzer() {
           <Result key="result" analysis={analysis} imageUrl={image?.url} onAgain={startOver} />
         ) : (
           <motion.div key="pick" variants={rise} initial="hidden" animate="show" exit="leave">
+            {/* Мальчик или девочка — Мартина обращается к ребёнку в нужном роде */}
+            {account && !account.gender && <GenderAsk />}
+
             {/* Арт-школа: возраст → урок по программе → три этапа; Мартина ведёт сама */}
             <ArtSchool onPhoto={openCamera} onCanvas={openCanvas} />
 
@@ -443,7 +448,58 @@ function Sparkle({ delay, size, className }: { delay: number; size: number; clas
   );
 }
 
+function GenderAsk() {
+  const { account, setAccount, haptic } = useApp();
+  const [saving, setSaving] = useState(false);
+
+  async function choose(gender: "boy" | "girl") {
+    haptic("selection");
+    setSaving(true);
+    try {
+      setAccount((await apiJson<{ account: Account }>("/api/profile", { gender })).account);
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 space-y-3">
+      <MartinaNote
+        text={`${account?.firstName ? `${account.firstName}, подскажи` : "Подскажи"}, как мне к тебе обращаться: ты мальчик или девочка?`}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ["boy", "👦 Я мальчик"],
+            ["girl", "👧 Я девочка"],
+          ] as const
+        ).map(([gender, label]) => (
+          <motion.button
+            key={gender}
+            {...press}
+            disabled={saving}
+            onClick={() => choose(gender)}
+            className="min-h-[3.125rem] rounded-[0.875rem] bg-fill px-4 text-headline font-semibold text-champagne disabled:opacity-50"
+          >
+            {label}
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?: string; onAgain: () => void }) {
+  const { account, haptic } = useApp();
+  // «Новое задание» открывается после ответа на вопрос Мартины (или сразу, если вопроса нет).
+  const [answered, setAnswered] = useState(false);
+  const answerRef = useRef<HTMLInputElement>(null);
+  const answerBlockRef = useRef<HTMLDivElement>(null);
+  // Нижняя «Ответить Мартине» нужна, только когда поле ответа ушло за край экрана.
+  const answerVisible = useInView(answerBlockRef);
+  const showTask = !analysis.question || answered;
+  const drew = account?.gender === "girl" ? "Нарисовала" : account?.gender === "boy" ? "Нарисовал" : "Готово";
+
   return (
     <motion.div variants={stagger(0.1)} initial="hidden" animate="show" exit="leave" className="space-y-4">
       <motion.div variants={rise} className="flex items-center gap-4">
@@ -545,7 +601,20 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
         </motion.div>
       )}
 
-      {analysis.nextTask.title && (
+      {/* Живой ответ на вопрос: голосом или текстом, Мартина реагирует */}
+      {analysis.question && (
+        <motion.div variants={rise} ref={answerBlockRef} className="scroll-mt-4">
+          <MartinaAnswer
+            ref={answerRef}
+            question={analysis.question}
+            title={analysis.title}
+            nextTask={analysis.nextTask.title}
+            onAnswered={() => setAnswered(true)}
+          />
+        </motion.div>
+      )}
+
+      {showTask && analysis.nextTask.title && (
         <motion.div variants={rise}>
           <p className="label px-4 pb-2">Новое задание</p>
           <div className="glass p-5">
@@ -584,14 +653,28 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
         </motion.div>
       )}
 
-      <motion.button
-        variants={rise}
-        {...press}
-        onClick={onAgain}
-        className="min-h-[3.125rem] w-full rounded-[0.875rem] bg-paper px-5 text-headline font-semibold text-ink"
-      >
-        Нарисовал — показать новый рисунок
-      </motion.button>
+      <motion.div variants={rise} className="space-y-2">
+        {analysis.question && !answered && !answerVisible && (
+          <motion.button
+            {...press}
+            onClick={() => {
+              haptic("light");
+              answerBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              answerRef.current?.focus({ preventScroll: true });
+            }}
+            className="min-h-[3.125rem] w-full rounded-[0.875rem] bg-fill px-5 text-headline font-semibold text-champagne"
+          >
+            💬 Ответить Мартине
+          </motion.button>
+        )}
+        <motion.button
+          {...press}
+          onClick={onAgain}
+          className="min-h-[3.125rem] w-full rounded-[0.875rem] bg-paper px-5 text-headline font-semibold text-ink"
+        >
+          📸 {drew} — показать рисунок
+        </motion.button>
+      </motion.div>
     </motion.div>
   );
 }

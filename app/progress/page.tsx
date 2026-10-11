@@ -7,6 +7,7 @@ import { useApp } from "@/components/AppProvider";
 import MartinaNote from "@/components/MartinaNote";
 import ScreenHeader from "@/components/ScreenHeader";
 import { apiFetch, apiJson } from "@/lib/client/api";
+import type { Account } from "@/lib/client/types";
 import { enter, exit, press, rise, softSpring, stagger } from "@/lib/motion";
 
 // «Прогресс ученика» (Parent Analytics): карточка ученика, динамика занятий,
@@ -66,7 +67,7 @@ const shortDate = (date: string) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 
 function ProgressScreen() {
-  const { account, haptic, handleError } = useApp();
+  const { account, setAccount, haptic, handleError } = useApp();
   const [progress, setProgress] = useState<Progress | null>(null);
   const [interests, setInterests] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
@@ -145,6 +146,37 @@ function ProgressScreen() {
                   </div>
                 </div>
               ))}
+            </div>
+            <p className="px-4 pb-2 pt-4 text-footnote text-dim">Обращение — Мартина говорит с ребёнком в его роде:</p>
+            <div className="flex gap-2">
+              {(
+                [
+                  ["boy", "Мальчик"],
+                  ["girl", "Девочка"],
+                ] as const
+              ).map(([gender, label]) => {
+                const active = account?.gender === gender;
+                return (
+                  <motion.button
+                    key={gender}
+                    {...press}
+                    onClick={async () => {
+                      haptic("selection");
+                      try {
+                        setAccount((await apiJson<{ account: Account }>("/api/profile", { gender })).account);
+                      } catch {
+                        // Не сохранилось — выбор остаётся прежним.
+                      }
+                    }}
+                    aria-pressed={active}
+                    className={`min-h-9 rounded-full px-4 text-subhead font-medium transition-colors duration-300 ease-out-expo ${
+                      active ? "bg-champagne text-ink" : "bg-fill text-paper"
+                    }`}
+                  >
+                    {label}
+                  </motion.button>
+                );
+              })}
             </div>
             <p className="px-4 pb-2 pt-4 text-footnote text-dim">
               Интересы — Мартина строит задания вокруг них (до 6):

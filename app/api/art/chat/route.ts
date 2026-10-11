@@ -10,7 +10,7 @@ import {
 import { displayName, isKid, publicAccount, recordActivity, refund, setArtTask } from "@/lib/store.mjs";
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
-import { artChatPrompt } from "@/lib/prompts.mjs";
+import { artAnswerPrompt, artChatPrompt } from "@/lib/prompts.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
 import { artLessonLine, artMethodLine } from "@/lib/artSchool.mjs";
 
@@ -59,9 +59,18 @@ export async function POST(request: Request) {
     profile: profileLine(account),
     lesson: artLessonLine(account),
   };
+  // Ответ на «Вопрос от Мартины» после разбора рисунка — короткая реакция без нового задания.
+  const answerTo = body?.answerTo && text(body.answerTo.question) ? body.answerTo : null;
+  const system = answerTo
+    ? artAnswerPrompt(persona, {
+        title: text(answerTo.title).slice(0, 120),
+        question: text(answerTo.question).slice(0, 400),
+        nextTask: text(answerTo.nextTask).slice(0, 120),
+      })
+    : artChatPrompt(persona, account.artTask ?? null);
   try {
     const reply = await groqChat(
-      [{ role: "system", content: artChatPrompt(persona, account.artTask ?? null) }, ...messages],
+      [{ role: "system", content: system }, ...messages],
       `art chat ${account.id}`,
       { maxTokens: 700, json: true },
     );
@@ -71,7 +80,7 @@ export async function POST(request: Request) {
     } catch {
       parsed = { reply };
     }
-    const task = parsed.task && text(parsed.task.title) ? setArtTask(account, parsed.task) : null;
+    const task = !answerTo && parsed.task && text(parsed.task.title) ? setArtTask(account, parsed.task) : null;
     recordActivity(account);
     return NextResponse.json({
       reply: text(parsed.reply) || reply,

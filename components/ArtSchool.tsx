@@ -172,7 +172,13 @@ export default function ArtSchool({ onPhoto, onCanvas }: { onPhoto: () => void; 
           <p className="mt-1 text-title3 font-semibold">{art.lesson.title}</p>
         </div>
         <MartinaNote
-          text={`Умница! Следующая тема в нашей арт-школе — «${art.nextTheme}». Начнём, когда будешь готов!`}
+          text={`Умница! Следующая тема в нашей арт-школе — «${art.nextTheme}». ${
+            account?.gender === "girl"
+              ? "Начнём, когда будешь готова!"
+              : account?.gender === "boy"
+                ? "Начнём, когда будешь готов!"
+                : "Начнём, как только захочешь!"
+          }`}
         />
         <motion.button {...press} disabled={busy} onClick={() => act("lesson")} className={primaryButton}>
           {busy ? "Мартина готовит урок…" : "Следующий урок"}
