@@ -4,6 +4,7 @@ import next from "next";
 import { getBotIdentity, startBot, webAppUrl } from "./bot/telegram-bot.mjs";
 import { GROQ_API_KEY_ENV_VARS, GROQ_MODEL, groqKeyCount, logDetailedError } from "./lib/groq.mjs";
 import { flushAccounts } from "./lib/store.mjs";
+import { visionChain } from "./lib/ai.mjs";
 import { telegramBotToken } from "./lib/telegram-auth.mjs";
 
 // Один процесс — один сервис на Railway: Next.js (Mini App + API) и Telegram-бот
@@ -39,6 +40,7 @@ function configurationProblems() {
   if (!webAppUrl()) problems.push("нет адреса Mini App (WEBAPP_URL или публичный домен Railway) — кнопка запуска не отправляется");
   if (!process.env.OPENAI_API_KEY) problems.push("OPENAI_API_KEY не задан — озвучка через голос браузера");
   if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) problems.push("нет ключа Vision — разбор рисунков выключен");
+  else if (!process.env.GEMINI_API_KEY) problems.push("GEMINI_API_KEY не задан — разбор рисунков идёт только через OpenAI");
   return problems;
 }
 
@@ -60,6 +62,7 @@ http
       const info = [
         `бот: ${getBotIdentity() ?? (telegramBotToken() ? "запускается или токен не принят Telegram" : "нет токена")}`,
         `Mini App: ${webAppUrl() ?? "не задан"}`,
+        `Vision: ${visionChain()}`,
       ];
       res.end([problems.length ? `ata-academy: ${problems.join("; ")}` : "ata-academy ishlayapti", ...info].join("\n"));
       return;

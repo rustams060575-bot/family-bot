@@ -9,7 +9,7 @@ export function setInitData(value: string) {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public data: { error?: string; message?: string; kind?: "ai" | "art" } = {},
+    public data: { error?: string; message?: string; kind?: "ai" | "art"; reason?: string } = {},
   ) {
     super(data.message ?? `HTTP ${status}`);
   }

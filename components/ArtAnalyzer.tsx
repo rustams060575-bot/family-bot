@@ -89,10 +89,18 @@ export default function ArtAnalyzer() {
     haptic("selection");
   }
 
-  async function analyze(blob: Blob) {
+  async function analyze(blob: Blob | null | undefined) {
+    // Пустой файл не отправляем: сервер всё равно отклонит его, а ребёнок увидит сбой.
+    if (!blob || blob.size === 0) {
+      console.error("[ArtAnalyzer] картинка пустая — запрос не отправлен", { size: blob?.size, type: blob?.type });
+      setNote(CANT_OPEN);
+      haptic("warning");
+      return;
+    }
     haptic("medium");
     setStatus("analyzing");
     setNote(null);
+    const startedAt = performance.now();
     try {
       const form = new FormData();
       form.append("image", blob, "drawing.jpg");
@@ -105,6 +113,19 @@ export default function ArtAnalyzer() {
       setStatus("idle");
       if (err instanceof ApiError && err.status === 422) {
         setNote(err.message);
+        haptic("warning");
+        return;
+      }
+      // Настоящая причина — в консоль (Telegram Desktop → «Inspect»), ребёнку — мягкая реплика Мартины.
+      console.error("[ArtAnalyzer] анализ не удался", {
+        status: err instanceof ApiError ? err.status : "сеть",
+        error: err instanceof ApiError ? err.data.error : String(err),
+        reason: err instanceof ApiError ? err.data.reason : undefined,
+        ms: Math.round(performance.now() - startedAt),
+        image: { size: blob.size, type: blob.type },
+      });
+      if (err instanceof ApiError && err.status === 400) {
+        setNote(CANT_OPEN);
         haptic("warning");
         return;
       }
