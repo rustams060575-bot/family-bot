@@ -18,7 +18,22 @@ const text = (value: unknown) => String(value ?? "").trim();
 const usable = (parsed: any) =>
   !!parsed && (!!text(parsed.notDrawing) || (!!text(parsed.praise) && !!text(parsed.question)));
 
+// Внешний try/catch: любое исключение (разбор формы, авторизация, хранилище) возвращается
+// клиенту текстом со статусом 500, а не скрывается за общей фразой.
 export async function POST(request: Request) {
+  try {
+    return await handle(request);
+  } catch (error: any) {
+    console.error(`[Vision] необработанная ошибка /api/art: ${error?.name ?? ""} ${error?.message ?? error}`);
+    if (error?.stack) console.error(error.stack);
+    return NextResponse.json(
+      { error: "internal", message: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}` },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle(request: Request) {
   const account = authenticate(request);
   if (!account) return unauthorized();
   const denied = requireAccess(account);

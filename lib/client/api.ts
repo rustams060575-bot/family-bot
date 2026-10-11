@@ -9,7 +9,14 @@ export function setInitData(value: string) {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public data: { error?: string; message?: string; kind?: "ai" | "art"; reason?: string } = {},
+    public data: {
+      error?: string;
+      message?: string;
+      kind?: "ai" | "art";
+      reason?: string;
+      raw?: string;
+      url?: string;
+    } = {},
   ) {
     super(data.message ?? `HTTP ${status}`);
   }
@@ -26,8 +33,15 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   }
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, data);
+    // Ответ может быть не JSON (HTML-страница прокси, 404 чужого хоста) — сохраняем его начало для диагностики.
+    const text = await response.text().catch(() => "");
+    let data: ApiError["data"] = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text.slice(0, 300) };
+    }
+    throw new ApiError(response.status, { ...data, url: response.url });
   }
   return response;
 }

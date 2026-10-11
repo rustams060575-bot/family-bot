@@ -53,6 +53,26 @@ async function downscale(file: Blob): Promise<Blob> {
   }
 }
 
+// Точная причина сбоя для экрана: HTTP-статус и ответ сервера или текст исключения JS.
+function describeFailure(stage: string, err: unknown, blob?: Blob | null) {
+  const parts = [`Этап: ${stage}`];
+  if (err instanceof ApiError) {
+    parts.push(`HTTP ${err.status}`);
+    if (err.data.error) parts.push(`error: ${err.data.error}`);
+    if (err.data.message) parts.push(`message: ${err.data.message}`);
+    if (err.data.reason) parts.push(`reason: ${err.data.reason}`);
+    if (err.data.raw) parts.push(`ответ: ${err.data.raw}`);
+    if (err.data.url) parts.push(`URL: ${err.data.url}`);
+  } else if (err instanceof Error) {
+    parts.push(`${err.name}: ${err.message || "(пустое сообщение)"}`);
+  } else {
+    parts.push(String(err));
+  }
+  if (blob !== undefined) parts.push(`фото: ${blob ? `${blob.size} байт, ${blob.type || "без типа"}` : "нет"}`);
+  if (typeof window !== "undefined") parts.push(`страница: ${window.location.origin}`);
+  return parts.join("\n");
+}
+
 export default function ArtAnalyzer() {
   const { account, features, refresh, haptic, handleError } = useApp();
   const [source, setSource] = useState<Source>("photo");
@@ -60,6 +80,8 @@ export default function ArtAnalyzer() {
   const [status, setStatus] = useState<"idle" | "analyzing" | "done">("idle");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Техническая причина последнего сбоя — показывается под репликой Мартины.
+  const [debug, setDebug] = useState<string | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
@@ -77,7 +99,15 @@ export default function ArtAnalyzer() {
     event.target.value = "";
     if (!file) return;
     setNote(null);
-    const blob = await downscale(file).catch(() => (SENDABLE.includes(file.type) ? file : null));
+    setDebug(null);
+    let blob: Blob | null = null;
+    try {
+      blob = await downscale(file);
+    } catch (err) {
+      console.error("[ArtAnalyzer] сжатие не удалось", err);
+      blob = SENDABLE.includes(file.type) ? file : null;
+      if (!blob) setDebug(describeFailure(`сжатие фото (${file.type || "без типа"}, ${file.size} байт)`, err));
+    }
     if (!blob) {
       setNote(CANT_OPEN);
       haptic("warning");
@@ -93,6 +123,7 @@ export default function ArtAnalyzer() {
     // Пустой файл не отправляем: сервер всё равно отклонит его, а ребёнок увидит сбой.
     if (!blob || blob.size === 0) {
       console.error("[ArtAnalyzer] картинка пустая — запрос не отправлен", { size: blob?.size, type: blob?.type });
+      setDebug(describeFailure("подготовка", new Error("картинка пустая — запрос не отправлен"), blob ?? null));
       setNote(CANT_OPEN);
       haptic("warning");
       return;
@@ -100,6 +131,7 @@ export default function ArtAnalyzer() {
     haptic("medium");
     setStatus("analyzing");
     setNote(null);
+    setDebug(null);
     const startedAt = performance.now();
     try {
       const form = new FormData();
@@ -111,6 +143,7 @@ export default function ArtAnalyzer() {
       refresh();
     } catch (err) {
       setStatus("idle");
+      setDebug(describeFailure(`отправка на /api/art (${Math.round(performance.now() - startedAt)} мс)`, err, blob));
       if (err instanceof ApiError && err.status === 422) {
         setNote(err.message);
         haptic("warning");
@@ -140,9 +173,15 @@ export default function ArtAnalyzer() {
       return;
     }
     // Холст на ретине экспортируется в 2–3× размере — сжимаем так же, как фото.
-    const raw = await canvasRef.current?.exportBlob();
-    const blob = raw ? await downscale(raw).catch(() => raw) : null;
-    if (!blob) {
+    setDebug(null);
+    let blob: Blob | null = null;
+    try {
+      const raw = await canvasRef.current?.exportBlob();
+      blob = raw ? await downscale(raw).catch(() => raw) : null;
+      if (!blob) throw new Error("холст не отдал картинку (toBlob вернул null)");
+    } catch (err) {
+      console.error("[ArtAnalyzer] экспорт холста не удался", err);
+      setDebug(describeFailure("экспорт холста", err));
       setNote(LOOK_AGAIN);
       return;
     }
@@ -155,6 +194,7 @@ export default function ArtAnalyzer() {
     setAnalysis(null);
     setStatus("idle");
     setNote(null);
+    setDebug(null);
   }
 
   if (!features.vision) {
@@ -227,8 +267,19 @@ export default function ArtAnalyzer() {
                       className="glass flex aspect-[4/5] w-full flex-col items-center justify-center gap-3 p-8"
                     >
                       <span className="grid h-16 w-16 place-items-center rounded-full bg-champagne/[0.14] text-champagne">
-                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                          <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7l1.3-2h7l1.3 2h1.7A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" strokeLinejoin="round" />
+                        <svg
+                          width="30"
+                          height="30"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          aria-hidden
+                        >
+                          <path
+                            d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7l1.3-2h7l1.3 2h1.7A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"
+                            strokeLinejoin="round"
+                          />
                           <circle cx="12" cy="13" r="3.8" />
                         </svg>
                       </span>
@@ -298,6 +349,15 @@ export default function ArtAnalyzer() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {debug && (
+              <div className="mt-3 rounded-xl bg-fill px-3 py-2">
+                <p className="text-footnote font-semibold text-mist">Техническая причина</p>
+                <pre className="mt-1 select-text whitespace-pre-wrap break-all font-mono text-caption text-paper">
+                  {debug}
+                </pre>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -309,10 +369,15 @@ export default function ArtAnalyzer() {
 function MartinaNote({ text }: { text: string }) {
   return (
     <div className="flex items-end gap-2">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-champagne text-headline font-semibold text-ink" aria-hidden>
+      <span
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-champagne text-headline font-semibold text-ink"
+        aria-hidden
+      >
         М
       </span>
-      <p className="rounded-[1.25rem] rounded-bl-md bg-ink-raised px-4 py-3 text-body text-paper shadow-[var(--card-shadow)]">{text}</p>
+      <p className="rounded-[1.25rem] rounded-bl-md bg-ink-raised px-4 py-3 text-body text-paper shadow-[var(--card-shadow)]">
+        {text}
+      </p>
     </div>
   );
 }
@@ -342,11 +407,21 @@ function Sparkle({ delay, size, className }: { delay: number; size: number; clas
       transition={{
         scale: { ...spring, delay },
         rotate: { ...spring, delay },
-        opacity: { delay, duration: 3.2, times: [0, 0.15, 0.6, 1], repeat: Infinity, repeatType: "mirror", ease: "easeInOut" },
+        opacity: {
+          delay,
+          duration: 3.2,
+          times: [0, 0.15, 0.6, 1],
+          repeat: Infinity,
+          repeatType: "mirror",
+          ease: "easeInOut",
+        },
       }}
       aria-hidden
     >
-      <path d="M12 0c.7 6.4 5 11.3 12 12-7 .7-11.3 5.6-12 12-.7-6.4-5-11.3-12-12 7-.7 11.3-5.6 12-12z" fill="currentColor" />
+      <path
+        d="M12 0c.7 6.4 5 11.3 12 12-7 .7-11.3 5.6-12 12-.7-6.4-5-11.3-12-12 7-.7 11.3-5.6 12-12z"
+        fill="currentColor"
+      />
     </motion.svg>
   );
 }
@@ -376,7 +451,10 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
           <p className="label px-4 pb-2">Твои цвета</p>
           <div className="flex flex-wrap gap-2">
             {analysis.colors.map((color) => (
-              <span key={color.name} className="flex min-h-9 items-center gap-2 rounded-full bg-ink-raised py-1 pl-1.5 pr-4 text-subhead text-paper">
+              <span
+                key={color.name}
+                className="flex min-h-9 items-center gap-2 rounded-full bg-ink-raised py-1 pl-1.5 pr-4 text-subhead text-paper"
+              >
                 <span
                   className="h-6 w-6 rounded-full ring-1 ring-inset ring-tint/10"
                   style={{ background: color.hex ?? "var(--fill)" }}
@@ -397,9 +475,15 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
               <div key={index}>
                 {index > 0 && <div className="hairline ml-14" />}
                 <div className="flex gap-3 px-4 py-3">
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-champagne/[0.14] text-champagne" aria-hidden>
+                  <span
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-champagne/[0.14] text-champagne"
+                    aria-hidden
+                  >
                     <svg width="14" height="14" viewBox="0 0 24 24">
-                      <path d="M12 0c.7 6.4 5 11.3 12 12-7 .7-11.3 5.6-12 12-.7-6.4-5-11.3-12-12 7-.7 11.3-5.6 12-12z" fill="currentColor" />
+                      <path
+                        d="M12 0c.7 6.4 5 11.3 12 12-7 .7-11.3 5.6-12 12-.7-6.4-5-11.3-12-12 7-.7 11.3-5.6 12-12z"
+                        fill="currentColor"
+                      />
                     </svg>
                   </span>
                   <div>
