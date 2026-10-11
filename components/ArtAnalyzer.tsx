@@ -7,6 +7,7 @@ import DrawingCanvas, { type DrawingCanvasHandle } from "@/components/DrawingCan
 import { ApiError, apiFetch } from "@/lib/client/api";
 import { martinaGreeting } from "@/lib/client/tracks";
 import SpeakButton from "@/components/SpeakButton";
+import MartinaNote from "@/components/MartinaNote";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Analysis = {
@@ -369,24 +370,6 @@ export default function ArtAnalyzer() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-// Реплика Мартины: монограмма + пузырь, как в чате занятий.
-function MartinaNote({ text }: { text: string }) {
-  return (
-    <div className="flex items-end gap-2">
-      <span
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-champagne text-headline font-semibold text-ink"
-        aria-hidden
-      >
-        М
-      </span>
-      <div className="rounded-[1.25rem] rounded-bl-md bg-ink-raised px-4 pb-1 pt-3 shadow-[var(--card-shadow)]">
-        <p className="text-body text-paper">{text}</p>
-        <SpeakButton text={text} className="-ml-1 px-1" />
-      </div>
     </div>
   );
 }

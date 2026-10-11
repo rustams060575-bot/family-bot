@@ -5,38 +5,46 @@ import { notFound } from "next/navigation";
 import { motion } from "framer-motion";
 import AppGate from "@/components/AppGate";
 import { useApp } from "@/components/AppProvider";
+import LanguageCoach from "@/components/LanguageCoach";
 import ScreenHeader from "@/components/ScreenHeader";
 import VoiceAssistant from "@/components/VoiceAssistant";
 import { KIDS_TOPIC, kidsTrackName, trackById } from "@/lib/client/tracks";
 import { loadTopic, saveTopic } from "@/lib/client/memory";
 import { rise, spring } from "@/lib/motion";
 
+// Первая вкладка — персональная программа: тест уровня и урок дня (15 минут).
+const DAILY = { id: "daily", title: "Урок дня", caption: "15 минут: теория, практика с Мартиной и экспресс-тест" };
+
 function TrackScreen({ trackId }: { trackId: string }) {
   const { account, haptic } = useApp();
   const track = trackById(trackId);
-  // Открываем ту тему, на которой пользователь остановился в прошлый раз.
+  // Открываем ту вкладку, на которой пользователь остановился в прошлый раз.
   const [topicId, setTopicId] = useState(() => {
     const saved = typeof window !== "undefined" ? loadTopic(trackId) : null;
-    return track?.topics?.some((item) => item.id === saved) ? saved! : track?.topics?.[0]?.id;
+    return saved && (saved === DAILY.id || track?.topics?.some((item) => item.id === saved)) ? saved : DAILY.id;
   });
   if (!track?.topics) notFound();
   const kid = !!account?.kid;
-  const topic = kid ? KIDS_TOPIC : track.topics.find((item) => item.id === topicId) ?? track.topics[0];
+  const daily = !kid && topicId === DAILY.id;
+  const topic = kid ? KIDS_TOPIC : (track.topics.find((item) => item.id === topicId) ?? track.topics[0]);
+  const header = daily ? DAILY : topic;
+  const tabs = [DAILY, ...track.topics];
 
   return (
     <div className={`flex flex-1 flex-col ${kid ? "font-rounded" : ""}`}>
-      <ScreenHeader
-        eyebrow={kid ? kidsTrackName(track) : track.name}
-        title={topic.title}
-        caption={topic.caption}
-      />
+      <ScreenHeader eyebrow={kid ? kidsTrackName(track) : track.name} title={header.title} caption={header.caption} />
 
-      {/* Темы — горизонтальная лента капсул; выбранная отмечена общей подложкой. Детям не нужна. */}
+      {/* Вкладки — горизонтальная лента капсул; выбранная отмечена общей подложкой. Детям не нужна. */}
       {!kid && (
-        <motion.div variants={rise} initial="hidden" animate="show" className="no-scrollbar -mx-4 mb-6 overflow-x-auto px-4">
+        <motion.div
+          variants={rise}
+          initial="hidden"
+          animate="show"
+          className="no-scrollbar -mx-4 mb-6 overflow-x-auto px-4"
+        >
           <div className="flex w-max gap-2">
-            {track.topics.map((item) => {
-              const active = item.id === topic.id;
+            {tabs.map((item) => {
+              const active = item.id === (daily ? DAILY.id : topic.id);
               return (
                 <button
                   key={item.id}
@@ -48,8 +56,16 @@ function TrackScreen({ trackId }: { trackId: string }) {
                   className="relative min-h-9 rounded-full px-4"
                 >
                   <span className="absolute inset-0 rounded-full bg-fill" />
-                  {active && <motion.span layoutId={`topic-${track.id}`} transition={spring} className="absolute inset-0 rounded-full bg-paper" />}
-                  <span className={`relative text-subhead font-medium ${active ? "text-ink" : "text-paper"}`}>{item.title}</span>
+                  {active && (
+                    <motion.span
+                      layoutId={`topic-${track.id}`}
+                      transition={spring}
+                      className="absolute inset-0 rounded-full bg-paper"
+                    />
+                  )}
+                  <span className={`relative text-subhead font-medium ${active ? "text-ink" : "text-paper"}`}>
+                    {item.title}
+                  </span>
                 </button>
               );
             })}
@@ -57,8 +73,12 @@ function TrackScreen({ trackId }: { trackId: string }) {
         </motion.div>
       )}
 
-      {/* key — новая тема начинает чистый диалог */}
-      <VoiceAssistant key={`${track.id}-${topic.id}`} track={track} topic={topic} kid={kid} />
+      {/* key — новая вкладка начинает чистый экран */}
+      {daily ? (
+        <LanguageCoach key={`${track.id}-daily`} track={track} />
+      ) : (
+        <VoiceAssistant key={`${track.id}-${topic.id}`} track={track} topic={topic} kid={kid} />
+      )}
     </div>
   );
 }

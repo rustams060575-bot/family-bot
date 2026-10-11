@@ -49,7 +49,7 @@ let nextId = 1;
 export default function VoiceAssistant({ track, topic, kid }: Props) {
   const { account, refresh, haptic, handleError } = useApp();
   // Занятие продолжается с того же места: история хранится на устройстве по треку и теме.
-  const chatKey = `${track.id}:${topic.id}:${kid ? "kid" : "adult"}`;
+  const chatKey = `${track.id}:${topic.memoryKey ?? topic.id}:${kid ? "kid" : "adult"}`;
   const greeting = (): Message => ({
     id: nextId++,
     role: "assistant",

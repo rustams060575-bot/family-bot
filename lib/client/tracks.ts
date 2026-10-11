@@ -4,7 +4,8 @@ import type { Role, TrackId } from "./types";
 // принимает только их. Детский режим сервер ведёт одним игровым сценарием на любую тему.
 // opener — первая реплика Мартины: она всегда говорит первой и сразу предлагает варианты.
 export type Opener = { text: string; choices: string[] };
-export type Topic = { id: string; title: string; caption: string; opener: Opener };
+// memoryKey — отдельная история диалога (например, практика конкретного урока дня).
+export type Topic = { id: string; title: string; caption: string; opener: Opener; memoryKey?: string };
 
 export type Track = {
   id: TrackId;
@@ -22,18 +23,9 @@ export const TRACKS: Track[] = [
     name: "ATA Spanish",
     monogram: "Es",
     href: "/learn/spanish",
-    tagline: "Срез знаний, грамматика, ежедневные интенсивы",
+    tagline: "Тест уровня, урок дня, грамматика, интенсивы",
     speechLang: "es-ES",
     topics: [
-      {
-        id: "diagnostic",
-        title: "Срез знаний",
-        caption: "3 вопроса → твой трек → первое упражнение",
-        opener: {
-          text: "Давай за минуту поймём, с чего тебе лучше начать: всего три коротких вопроса. Первый — как ты сам оцениваешь свой испанский?",
-          choices: ["Только начинаю", "Понимаю простое", "Уже говорю"],
-        },
-      },
       {
         id: "grammar",
         title: "Грамматика",
@@ -68,18 +60,9 @@ export const TRACKS: Track[] = [
     name: "ATA English",
     monogram: "En",
     href: "/learn/english",
-    tagline: "Разговор, адаптация, идиомы, живой контекст",
+    tagline: "Тест уровня, урок дня, разговор, идиомы",
     speechLang: "en-CA",
     topics: [
-      {
-        id: "diagnostic",
-        title: "Срез знаний",
-        caption: "3 вопроса → твой трек → первое упражнение",
-        opener: {
-          text: "Давай за минуту поймём, с чего тебе лучше начать: всего три коротких вопроса. Первый — как ты сам оцениваешь свой английский?",
-          choices: ["Только начинаю", "Объясняюсь в быту", "Говорю свободно"],
-        },
-      },
       {
         id: "conversation",
         title: "Разговорный тренинг",

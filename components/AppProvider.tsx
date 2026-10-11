@@ -130,6 +130,18 @@ export default function AppProvider({ children }: { children: React.ReactNode })
       const me = await apiJson<MeResponse>("/api/me");
       let current = me.account;
       if (current.role) {
+        // Уровень языка потерялся на сервере, а на устройстве он есть — возвращаем его.
+        const saved = await loadProfile();
+        const lost = (["spanish", "english"] as const).some(
+          (track) => !current.levels?.[track] && saved?.levels?.[track],
+        );
+        if (lost) {
+          try {
+            current = (await apiJson<{ account: Account }>("/api/profile", { levels: saved!.levels })).account;
+          } catch {
+            // не вышло — уровень можно определить заново
+          }
+        }
         // Свежая резервная копия профиля на устройстве и в облаке Telegram.
         const profile = profileFromAccount(current);
         if (profile) saveProfile(profile);

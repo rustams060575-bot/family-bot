@@ -11,6 +11,7 @@ import { displayName, isKid, isVip, recordActivity, refund } from "@/lib/store.m
 import { findStudent, recentLessonsText } from "@/lib/crm.mjs";
 import { groqChat, logDetailedError } from "@/lib/groq.mjs";
 import { crmPrompt, kidsPrompt, textPrompt, voicePrompt } from "@/lib/prompts.mjs";
+import { learnerLine, learningOf, lessonPracticeLine } from "@/lib/learning.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 
 export const runtime = "nodejs";
@@ -59,17 +60,18 @@ export async function POST(request: Request) {
     // Детский режим: один игровой сценарий на любую тему, голосом и текстом.
     system = kidsPrompt(track, persona);
   } else if (language) {
-    system = (mode === "voice" ? voicePrompt : textPrompt)(track, topic, account.role, persona);
+    // Память Мартины: уровень ученика, пройденные темы и урок дня — сложность речи под уровень.
+    const lesson = topic === "lesson" ? learningOf(account, track).lesson : null;
+    if (topic === "lesson" && !lesson) return badRequest("Урок дня ещё не создан.");
+    const context = [learnerLine(account, track), lessonPracticeLine(lesson)].filter(Boolean).join("\n\n");
+    system = (mode === "voice" ? voicePrompt : textPrompt)(track, topic, account.role, persona, context);
   }
   if (!system) return badRequest("Неизвестный трек или тема.");
 
   // Слова, которые Whisper распознал неуверенно, — подсказка модели про произношение.
   if (mode === "voice" && !kid && Array.isArray(body?.uncertain) && body.uncertain.length) {
     const last = messages.at(-1)!;
-    last.content += `\n\n(неуверенно распознанные фрагменты: ${body.uncertain
-      .slice(0, 5)
-      .map(String)
-      .join("; ")})`;
+    last.content += `\n\n(неуверенно распознанные фрагменты: ${body.uncertain.slice(0, 5).map(String).join("; ")})`;
   }
 
   const rejected = consumeOrReject(account, "ai");

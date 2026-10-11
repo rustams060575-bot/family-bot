@@ -3,7 +3,7 @@
 // заново: профиль дублируется в localStorage и в Telegram CloudStorage (переживает
 // переустановку Telegram и работает на всех устройствах пользователя).
 // Здесь же — где пользователь остановился: последний экран, тема и история занятия.
-import type { Account, Role, TrackId } from "./types";
+import type { Account, Level, Role, TrackId } from "./types";
 
 export type SavedProfile = {
   role: Role;
@@ -11,6 +11,7 @@ export type SavedProfile = {
   remindersEnabled: boolean;
   reminderHour?: number;
   tzOffsetMin: number;
+  levels?: { spanish: Level | null; english: Level | null };
 };
 
 const PROFILE_KEY = "ata_profile";
@@ -67,6 +68,7 @@ export function profileFromAccount(account: Account): SavedProfile | null {
     remindersEnabled: account.reminders.enabled,
     reminderHour: account.reminders.hour,
     tzOffsetMin: new Date().getTimezoneOffset(),
+    levels: account.levels,
   };
 }
 
