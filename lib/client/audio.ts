@@ -189,3 +189,37 @@ export async function speakWithBrowser(text: string, lang: string, onEnd?: () =>
     finish();
   }
 }
+
+// Русская реплика озвучивается русским голосом, остальные — голосом изучаемого языка.
+export function speechLangFor(text: string, foreignLang = "en-US") {
+  const letters = text.replace(/[^\p{L}]/gu, "");
+  const cyrillic = text.replace(/[^\p{Script=Cyrillic}]/gu, "");
+  return letters && cyrillic.length / letters.length > 0.3 ? "ru-RU" : foreignLang;
+}
+
+// Глобальная разблокировка звука для iOS WebView: первое касание где угодно в приложении
+// «будит» синтез речи и Web Audio, чтобы озвучка после ответа ИИ не блокировалась Autoplay.
+export function installAudioUnlock() {
+  if (typeof window === "undefined") return () => {};
+  const events = ["pointerdown", "touchend", "click", "keydown"] as const;
+  const unlock = () => {
+    primeSpeech();
+    try {
+      const Context = window.AudioContext ?? (window as any).webkitAudioContext;
+      if (Context) {
+        const context = new Context();
+        const buffer = context.createBuffer(1, 1, 22050);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(context.destination);
+        source.start(0);
+        context.resume?.().finally(() => context.close?.());
+      }
+    } catch {
+      // Web Audio недоступен — синтез речи уже разблокирован
+    }
+    events.forEach((name) => window.removeEventListener(name, unlock, true));
+  };
+  events.forEach((name) => window.addEventListener(name, unlock, { capture: true, passive: true }));
+  return () => events.forEach((name) => window.removeEventListener(name, unlock, true));
+}

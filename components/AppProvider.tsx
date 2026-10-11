@@ -21,6 +21,7 @@ import {
 } from "@/lib/client/theme";
 import SubscriptionCard from "@/components/SubscriptionCard";
 import { loadProfile, profileFromAccount, rememberPath, saveProfile, takeResumePath } from "@/lib/client/memory";
+import { installAudioUnlock } from "@/lib/client/audio";
 
 type Haptic = "light" | "medium" | "selection" | "success" | "warning" | "error";
 
@@ -111,6 +112,9 @@ export default function AppProvider({ children }: { children: React.ReactNode })
     saveTextSize(size);
     applyTextSize(size);
   }, []);
+
+  // iOS WebView: первое касание где угодно снимает замок Autoplay для голоса Мартины.
+  useEffect(() => installAudioUnlock(), []);
 
   // Начальное состояние уже выставил скрипт в <head>; здесь синхронизируем React.
   useEffect(() => {

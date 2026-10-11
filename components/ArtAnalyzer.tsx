@@ -6,6 +6,7 @@ import { useApp } from "@/components/AppProvider";
 import DrawingCanvas, { type DrawingCanvasHandle } from "@/components/DrawingCanvas";
 import { ApiError, apiJson } from "@/lib/client/api";
 import { martinaGreeting } from "@/lib/client/tracks";
+import SpeakButton from "@/components/SpeakButton";
 import { EASE_IN_OUT, enter, exit, press, rise, spring, stagger } from "@/lib/motion";
 
 type Analysis = {
@@ -375,9 +376,10 @@ function MartinaNote({ text }: { text: string }) {
       >
         М
       </span>
-      <p className="rounded-[1.25rem] rounded-bl-md bg-ink-raised px-4 py-3 text-body text-paper shadow-[var(--card-shadow)]">
-        {text}
-      </p>
+      <div className="rounded-[1.25rem] rounded-bl-md bg-ink-raised px-4 pb-1 pt-3 shadow-[var(--card-shadow)]">
+        <p className="text-body text-paper">{text}</p>
+        <SpeakButton text={text} className="-ml-1 px-1" />
+      </div>
     </div>
   );
 }
@@ -501,6 +503,7 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
         <motion.div variants={rise} className="glass glass-accent p-5">
           <p className="text-footnote font-semibold text-champagne">Вопрос от Мартины</p>
           <p className="mt-1 text-title3 font-semibold">{analysis.question}</p>
+          <SpeakButton text={`Вопрос от Мартины. ${analysis.question}`} className="-ml-1 mt-1 px-1" />
         </motion.div>
       )}
 
@@ -508,7 +511,18 @@ function Result({ analysis, imageUrl, onAgain }: { analysis: Analysis; imageUrl?
         <motion.div variants={rise}>
           <p className="label px-4 pb-2">Новое задание</p>
           <div className="glass p-5">
-            <h3 className="text-title3 font-semibold">{analysis.nextTask.title}</h3>
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-title3 font-semibold">{analysis.nextTask.title}</h3>
+              <SpeakButton
+                label={false}
+                className="-mr-2 -mt-2 justify-center px-2"
+                text={[
+                  `Новое задание: ${analysis.nextTask.title}.`,
+                  ...analysis.nextTask.steps.map((step, index) => `${index + 1}. ${step}`),
+                  analysis.nextTask.materials ? `Понадобится: ${analysis.nextTask.materials}.` : "",
+                ].join(" ")}
+              />
+            </div>
             <ol className="mt-3 space-y-2">
               {analysis.nextTask.steps.map((step, index) => (
                 <li key={index} className="flex gap-3 text-body">

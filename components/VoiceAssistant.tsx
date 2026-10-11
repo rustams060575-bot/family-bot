@@ -5,7 +5,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useApp } from "@/components/AppProvider";
 import Waveform from "@/components/Waveform";
 import { ApiError, apiJson } from "@/lib/client/api";
-import { AudioEngine, primeSpeech, speakWithBrowser, stopSpeech } from "@/lib/client/audio";
+import { AudioEngine, primeSpeech, speakWithBrowser, speechLangFor, stopSpeech } from "@/lib/client/audio";
+import SpeakButton, { SpeakerIcon } from "@/components/SpeakButton";
 import { martinaGreeting, type Topic, type Track } from "@/lib/client/tracks";
 import { loadChat, saveChat } from "@/lib/client/memory";
 import { enter, exit, press, spring } from "@/lib/motion";
@@ -44,13 +45,6 @@ const NO_MIC =
 const RETRY = "Ой, связь на секунду пропала. Напиши или скажи это ещё раз, пожалуйста!";
 
 let nextId = 1;
-
-// Русская реплика озвучивается русским голосом, остальные — голосом изучаемого языка.
-function speechLangFor(text: string, track: Track) {
-  const letters = text.replace(/[^\p{L}]/gu, "");
-  const cyrillic = text.replace(/[^Ѐ-ӿ]/g, "");
-  return letters && cyrillic.length / letters.length > 0.3 ? "ru-RU" : (track.speechLang ?? "en-US");
-}
 
 export default function VoiceAssistant({ track, topic, kid }: Props) {
   const { account, refresh, haptic, handleError } = useApp();
@@ -122,7 +116,7 @@ export default function VoiceAssistant({ track, topic, kid }: Props) {
         setPhase("idle");
       };
       // Только бесплатный голос устройства — никаких платных TTS-сервисов.
-      speakWithBrowser(message.content, speechLangFor(message.content, track), done);
+      speakWithBrowser(message.content, speechLangFor(message.content, track.speechLang), done);
     },
     [track],
   );
@@ -488,7 +482,8 @@ function AssistantBubble({
             {speaking ? "Звучит" : "Прослушать"}
           </button>
         )}
-        {message.local && <div className="h-2" />}
+        {/* Переспросы и подсказки Мартины тоже можно прослушать. */}
+        {message.local && <SpeakButton text={message.content} className="-ml-1 px-1" />}
       </div>
     </div>
   );
@@ -586,20 +581,6 @@ function MicGlyph() {
     >
       <rect x="9" y="3" width="6" height="11" rx="3" />
       <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SpeakerIcon({ active }: { active: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <path d="M2.5 6h2l3-2.5v9L4.5 10h-2z" strokeLinejoin="round" />
-      <motion.path
-        d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.3 6.3 0 0 1 0 9"
-        strokeLinecap="round"
-        animate={{ opacity: active ? [0.4, 1, 0.4] : 1 }}
-        transition={active ? { duration: 1.4, repeat: Infinity, ease: "easeInOut" } : undefined}
-      />
     </svg>
   );
 }
