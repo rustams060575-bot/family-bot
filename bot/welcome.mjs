@@ -18,6 +18,7 @@ const ROLE_TITLE = { student: "Ученик", tutor: "Репетитор", paren
 const TRACK_TITLE = {
   spanish: "ATA Spanish",
   english: "ATA English",
+  german: "ATA Deutsch",
   art: "ATA Kids Art",
   translate: "ATA Translate",
 };
@@ -73,6 +74,7 @@ export function aboutText() {
     "<b>Направления</b>",
     "• <b>ATA Spanish</b> — срез знаний, грамматика, интенсивы",
     "• <b>ATA English</b> — разговор, адаптация, идиомы",
+    "• <b>ATA Deutsch</b> — немецкий A2–B2: срез знаний, уроки дня, разговор с Мартиной",
     "• <b>ATA Kids Art</b> — разбор детских рисунков и новые задания",
     "• <b>Шахматы & Логика с Лео</b> — наставник Лео: суперсилы фигур, тактика, маты в 1–2 хода",
     "• <b>ATA Translate</b> — перевод с учётом тона",

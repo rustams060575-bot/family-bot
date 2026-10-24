@@ -11,7 +11,7 @@ export type SavedProfile = {
   remindersEnabled: boolean;
   reminderHour?: number;
   tzOffsetMin: number;
-  levels?: { spanish: Level | null; english: Level | null };
+  levels?: { spanish: Level | null; english: Level | null; german: Level | null };
 };
 
 const PROFILE_KEY = "ata_profile";
@@ -104,7 +104,7 @@ export async function loadProfile(): Promise<SavedProfile | null> {
 }
 
 // ── Где пользователь остановился ─────────────────────────────────────────────
-const RESUMABLE = /^\/(learn\/(spanish|english)|art|translate|crm)$/;
+const RESUMABLE = /^\/(learn\/(spanish|english|german)|art|translate|crm)$/;
 
 export function rememberPath(path: string) {
   if (RESUMABLE.test(path)) writeLocal(LAST_PATH_KEY, path);

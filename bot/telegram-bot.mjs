@@ -197,7 +197,7 @@ async function askAssistant(user, userText, chatId, account) {
   const learning = track ? account.learning?.[track] : null;
   const parts = [systemInstruction, persona];
   if (track) {
-    if (isStrictLevel(learning?.level)) parts.push(cefrBlock(learning.level, learning));
+    if (isStrictLevel(learning?.level, track)) parts.push(cefrBlock(learning.level, learning, track));
     parts.push(
       studentProfileBlock(account, track),
       teacherRules({
@@ -214,7 +214,7 @@ async function askAssistant(user, userText, chatId, account) {
     { tier: "dialog" },
   );
   if (track) {
-    replyText = await guardReply(replyText, { level: learning?.level ?? null, label: `chat ${chatId}` });
+    replyText = await guardReply(replyText, { level: learning?.level ?? null, track, label: `chat ${chatId}` });
     if (user.history.length === 0) summarizeInBackground(account, track, "new-session");
     recordTurn(account, track, userText, replyText);
   }

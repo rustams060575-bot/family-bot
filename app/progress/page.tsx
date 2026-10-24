@@ -17,7 +17,7 @@ type Card = {
   age: number | null;
   interests: string[];
   art_level: string;
-  lang_level: { spanish: string | null; english: string | null };
+  lang_level: { spanish: string | null; english: string | null; german: string | null };
   created_art_count: number;
   chess_level: "novice" | "amateur" | "strategist" | null;
   chess_solved: number;
@@ -58,7 +58,7 @@ type Progress = {
     history: { title: string; date: string }[];
     nextTheme: string | null;
   };
-  languages: { english: LangProgress; spanish: LangProgress };
+  languages: { english: LangProgress; spanish: LangProgress; german: LangProgress };
   chess: ChessProgress;
   artworks: Artwork[];
 };
@@ -137,6 +137,7 @@ function ProgressScreen() {
                 ["Уровень в шахматах", progress.chess.levelLabel ?? "опрос Лео не пройден"],
                 ["English", progress.card.lang_level.english ?? "тест не пройден"],
                 ["Español", progress.card.lang_level.spanish ?? "тест не пройден"],
+                ["Deutsch", progress.card.lang_level.german ?? "тест не пройден"],
               ].map(([label, value], index) => (
                 <div key={label}>
                   {index > 0 && <div className="hairline ml-4" />}
@@ -297,13 +298,13 @@ function ProgressScreen() {
           </motion.section>
 
           {/* Языковые темы */}
-          {(["english", "spanish"] as const).map((track) => {
+          {(["english", "spanish", "german"] as const).map((track) => {
             const lang = progress.languages[track];
             if (!lang.level && !lang.lessonsDone) return null;
             return (
               <motion.section key={track} variants={rise}>
                 <h2 className="label px-4 pb-2">
-                  {track === "english" ? "English" : "Español"} · {lang.level ?? "—"} · уроков: {lang.lessonsDone}
+                  {{ english: "English", spanish: "Español", german: "Deutsch" }[track]} · {lang.level ?? "—"} · уроков: {lang.lessonsDone}
                 </h2>
                 <div className="glass overflow-hidden">
                   {lang.history.length ? (

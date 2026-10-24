@@ -104,7 +104,7 @@ import { ApiError, apiFetch } from "./api";
 // Лучшие известные женские голоса по платформам: iOS/macOS (Milena, Katya), Android/Chrome
 // (Google русский), Windows (Svetlana, Dariya), плюс женские голоса для en/es.
 const PREFERRED_VOICES =
-  /(milena|katya|google русский|svetlana|dariya|irina|alena|female|samantha|karen|moira|tessa|victoria|monica|paulina|google español|google us english)/i;
+  /(milena|katya|google русский|svetlana|dariya|irina|alena|female|samantha|karen|moira|tessa|victoria|monica|paulina|google español|anna|petra|markus|google deutsch|google us english)/i;
 // Мягкая, ласковая подача: чуть медленнее и чуть выше обычного.
 const RATE = 0.92;
 const PITCH = 1.08;

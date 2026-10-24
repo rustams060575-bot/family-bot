@@ -1,5 +1,5 @@
 export type Role = "student" | "tutor" | "parent";
-export type TrackId = "spanish" | "english" | "art" | "translate";
+export type TrackId = "spanish" | "english" | "german" | "art" | "translate";
 export type Plan = "free" | "premium";
 export type Level = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type ArtTask = { title: string; idea: string; steps: string[]; materials: string; givenAt: string };
@@ -20,7 +20,7 @@ export type Account = {
   // Заявку только что одобрили — показать праздничный поп-ап (один раз).
   celebrate: boolean;
   // Уровень по CEFR в языковых треках (тест уровня или выбор вручную).
-  levels: { spanish: Level | null; english: Level | null };
+  levels: { spanish: Level | null; english: Level | null; german: Level | null };
   // Администратор школы: доступ к /admin. Супер-админ (@r_design_space) получает заявки.
   admin: boolean;
   superAdmin: boolean;

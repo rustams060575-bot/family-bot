@@ -32,6 +32,7 @@ type Learning = {
   level: Level | null;
   // Целевой уровень — на шаг выше текущего; пробелы — по срезу знаний.
   target: Level | null;
+  checkDue?: boolean;
   gaps: string[];
   lessonsDone: number;
   recentTopics: string[];
@@ -57,7 +58,7 @@ const STEPS = [
   { id: "quiz", title: "Тест" },
 ] as const;
 
-const LANGUAGE_NAME: Record<string, string> = { spanish: "испанский", english: "английский" };
+const LANGUAGE_NAME: Record<string, string> = { spanish: "испанский", english: "английский", german: "немецкий" };
 
 const primaryButton =
   "min-h-[3.125rem] w-full rounded-[0.875rem] bg-paper px-5 text-headline font-semibold text-ink disabled:opacity-50";
@@ -161,6 +162,12 @@ export default function LanguageCoach({ track }: { track: Track }) {
         </button>
       </motion.div>
 
+      {learning.checkDue && (
+        <motion.div variants={rise} initial="hidden" animate="show" className="mb-4">
+          <MartinaNote text="Ты уже немало позанимался — пора обновить срез знаний, чтобы уроки точно подходили твоему уровню. Нажми «Сменить уровень» и выбери «Пройти срез знаний»." />
+        </motion.div>
+      )}
+
       {failure && <Retry text={failure} onRetry={() => act("lesson")} />}
 
       {!learning.lesson && !failure && (
@@ -258,7 +265,13 @@ function Placement({
       {stage === "intro" && (
         <motion.div key="intro" variants={stagger()} initial="hidden" animate="show" exit="leave" className="space-y-4">
           <motion.div variants={rise}>
-            <MartinaNote text="Начнём с объективного среза: 5 ёмких вопросов на сложную грамматику и продвинутую лексику. По ответам я найду точечные пробелы и буду работать на шаг выше твоего уровня — к C1/C2." />
+            <MartinaNote
+              text={
+                track.id === "german"
+                  ? "Начнём с короткого среза: 5 вопросов от A2 до B2. По ответам я определю твой уровень и найду точечные пробелы, а дальше мы будем заниматься понемногу каждый день — без перегруза."
+                  : "Начнём с объективного среза: 5 ёмких вопросов на сложную грамматику и продвинутую лексику. По ответам я найду точечные пробелы и буду работать на шаг выше твоего уровня — к C1/C2."
+              }
+            />
           </motion.div>
           <motion.div variants={rise} className="space-y-2 pt-2">
             <motion.button {...press} onClick={start} className={primaryButton}>
@@ -280,7 +293,7 @@ function Placement({
         <motion.div key="manual" variants={rise} initial="hidden" animate="show" exit="leave">
           <p className="label px-4 pb-2">Мой {language}</p>
           <div className="glass overflow-hidden">
-            {LEVELS.map((level, position) => (
+            {LEVELS.filter((level) => track.id !== "german" || ["A2", "B1", "B2"].includes(level.id)).map((level, position) => (
               <button
                 key={level.id}
                 disabled={saving}
@@ -383,8 +396,12 @@ function Placement({
             <MartinaNote
               text={
                 result.gaps.length
-                  ? `Уровень — ${result.level}. Работаем на шаг выше, на ${result.target}: сначала закрываем пробелы из списка, дальше — урок дня с продвинутой лексикой, дискуссией и тестом.`
-                  : `Уровень — ${result.level}, все ответы верны. Дальше — шлифовка до C2 Perfecto: стиль, регистр, риторика.`
+                  ? result.target === result.level
+                    ? `Уровень — ${result.level}. Работаем строго на нём и растём внутри уровня: сначала закрываем пробелы из списка, дальше — урок дня с теорией, разговором и тестом.`
+                    : `Уровень — ${result.level}. Работаем на шаг выше, на ${result.target}: сначала закрываем пробелы из списка, дальше — урок дня с продвинутой лексикой, дискуссией и тестом.`
+                  : result.target === result.level
+                    ? `Уровень — ${result.level}, все ответы верны. Закрепляем его и двигаемся вперёд внутри уровня — уроки дня будут постепенно усложняться.`
+                    : `Уровень — ${result.level}, все ответы верны. Дальше — шлифовка до C2 Perfecto: стиль, регистр, риторика.`
               }
             />
           </motion.div>

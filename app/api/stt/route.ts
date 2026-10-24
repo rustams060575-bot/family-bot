@@ -24,8 +24,9 @@ const HALLUCINATIONS =
 const ALLOWED_LANGS: Record<string, string[]> = {
   english: ["ru", "en"],
   spanish: ["ru", "es", "en"],
+  german: ["ru", "de", "en"],
 };
-const LANG_CODES: Record<string, string> = { russian: "ru", english: "en", spanish: "es" };
+const LANG_CODES: Record<string, string> = { russian: "ru", english: "en", spanish: "es", german: "de" };
 
 function langCode(value: unknown) {
   const raw = String(value ?? "").toLowerCase();
@@ -39,6 +40,7 @@ function vocabularyPrompt(track: string, name: string, kid: boolean) {
     return `${hello} Что мне нарисовать? Дай сложное задание. Хочу нарисовать дракона, замок, ракету. Краски, карандаши, фломастеры.`;
   if (kid) return `${hello} Космос, ракета, машинки, супергерои. Hello! Cat, dog, rocket, car.`;
   if (track === "spanish") return `${hello} Hola, ¿qué tal? Quiero practicar español.`;
+  if (track === "german") return `${hello} Hallo, wie geht's? Ich möchte Deutsch üben.`;
   return `${hello} Hello, how are you? I'd like to practice my English.`;
 }
 

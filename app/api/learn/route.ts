@@ -16,8 +16,10 @@ import { recordTurn, summarizeInBackground } from "@/lib/sessionSummary.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import {
   LANGUAGE_TRACKS,
+  DAILY_LESSON_CAP,
   completeLesson,
   learningOf,
+  lessonsToday,
   lessonPrompt,
   normalizeLesson,
   placementQuestions,
@@ -117,6 +119,10 @@ export async function POST(request: Request) {
       const reusable = current && (!current.completedAt || (current.date === todayKey(account) && !body?.next));
       if (reusable) return NextResponse.json({ learning: publicLearning(account, track) });
 
+      // Без перегруза: после дневной нормы новый урок откладываем на завтра.
+      if (lessonsToday(account, track) >= DAILY_LESSON_CAP) {
+        return badRequest("На сегодня достаточно — вы отлично поработали! Новый урок будет ждать вас завтра.");
+      }
       const rejected = consumeOrReject(account, "ai");
       if (rejected) return rejected;
       try {

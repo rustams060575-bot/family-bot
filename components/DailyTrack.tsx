@@ -13,7 +13,7 @@ import { enter, exit, press, rise } from "@/lib/motion";
 // Третий пункт — шахматный челлендж Лео: задачка дня на 2–3 минуты (решается на /chess).
 
 type Micro = {
-  track: "english" | "spanish";
+  track: "english" | "spanish" | "german";
   topic: string;
   intro: string;
   words: { word: string; translation: string; example: string }[];
@@ -22,7 +22,7 @@ type Micro = {
 type Daily = {
   date: string;
   art: { needsAge: boolean; title: string | null; stage: number | null; nextTheme: string | null; done: boolean };
-  lang: { track: "english" | "spanish"; micro: Micro | null; done: boolean; correct: boolean | null };
+  lang: { track: "english" | "spanish" | "german"; micro: Micro | null; done: boolean; correct: boolean | null };
   chess: {
     needsSurvey: boolean;
     needsAge: boolean;
@@ -33,8 +33,8 @@ type Daily = {
   };
 };
 
-const LANG_LABEL = { english: "English", spanish: "Español" };
-const SPEECH = { english: "en-US", spanish: "es-ES" };
+const LANG_LABEL = { english: "English", spanish: "Español", german: "Deutsch" };
+const SPEECH = { english: "en-US", spanish: "es-ES", german: "de-DE" };
 
 export default function DailyTrack() {
   const { haptic, refresh } = useApp();

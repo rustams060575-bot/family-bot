@@ -16,7 +16,7 @@ import { guardReply } from "@/lib/teacherRules.mjs";
 import { kidsLevel } from "@/lib/cefr.mjs";
 import { recordTurn, summarizeInBackground } from "@/lib/sessionSummary.mjs";
 import { crmPrompt, kidsPrompt, textPrompt, voicePrompt } from "@/lib/prompts.mjs";
-import { learnerLine, learningOf, lessonPracticeLine } from "@/lib/learning.mjs";
+import { LANGUAGE_TRACKS, learnerLine, learningOf, lessonPracticeLine } from "@/lib/learning.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
   if (messages.at(-1)?.role !== "user") return badRequest("Нет реплики пользователя.");
 
   const kid = isKid(account);
-  const language = track === "spanish" || track === "english";
+  const language = LANGUAGE_TRACKS.includes(track);
   // Long-term memory: имя, интересы, уровень и итог прошлого урока подставляются в каждый запрос.
   const learning = language ? learningOf(account, track) : null;
   const persona = {
@@ -134,6 +134,7 @@ export async function POST(request: Request) {
     // Серверная проверка: ровно один интерактив и (A1–B1) никаких конструкций выше уровня.
     const guarded = await guardReply(String(parsed.reply ?? "").trim() || reply, {
       level: kid ? kidsLevel(learning) : persona.level,
+      track,
       label: `app chat ${account.id}`,
     });
     // Новый урок закрывает прошлую сессию (суммаризация в фоне), затем копим расшифровку этой.

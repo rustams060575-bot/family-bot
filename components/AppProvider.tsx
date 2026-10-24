@@ -132,7 +132,7 @@ export default function AppProvider({ children }: { children: React.ReactNode })
       if (current.role) {
         // Уровень языка потерялся на сервере, а на устройстве он есть — возвращаем его.
         const saved = await loadProfile();
-        const lost = (["spanish", "english"] as const).some(
+        const lost = (["spanish", "english", "german"] as const).some(
           (track) => !current.levels?.[track] && saved?.levels?.[track],
         );
         if (lost) {

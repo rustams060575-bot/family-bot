@@ -102,6 +102,52 @@ export const TRACKS: Track[] = [
     ],
   },
   {
+    id: "german",
+    name: "ATA Deutsch",
+    monogram: "De",
+    href: "/learn/german",
+    tagline: "A2–B2: срез, урок дня, разговор и грамматика с Мартиной",
+    speechLang: "de-DE",
+    topics: [
+      {
+        id: "grammar",
+        title: "Grammatik",
+        caption: "Падежи, порядок слов, времена",
+        opener: {
+          text: "Heute üben wir Schritt für Schritt. Womit möchtest du anfangen: Artikel und Fälle, Wortstellung oder Perfekt?",
+          choices: ["Artikel und Fälle", "Wortstellung", "Perfekt"],
+        },
+      },
+      {
+        id: "conversation",
+        title: "Gespräch",
+        caption: "Живой разговор на твоём уровне",
+        opener: {
+          text: "Lass uns ein bisschen plaudern. Worüber sprechen wir heute: Hobbys, Reisen oder Arbeit?",
+          choices: ["Hobbys", "Reisen", "Arbeit"],
+        },
+      },
+      {
+        id: "vocabulary",
+        title: "Wortschatz",
+        caption: "2–3 слова с артиклем и примером",
+        opener: {
+          text: "Ich zeige dir heute ein paar nützliche Wörter. Welches Thema passt dir: Alltag, Essen oder Beruf?",
+          choices: ["Alltag", "Essen", "Beruf"],
+        },
+      },
+      {
+        id: "writing",
+        title: "Schreiben",
+        caption: "Проверка твоих фраз и писем",
+        opener: {
+          text: "Schick mir ein paar Sätze oder eine kurze Nachricht auf Deutsch — ich helfe dir beim Verbessern. Oder soll ich dir eine kleine Aufgabe geben?",
+          choices: ["Gib mir eine Aufgabe", "Ich schreibe selbst"],
+        },
+      },
+    ],
+  },
+  {
     id: "art",
     name: "ATA Kids Art",
     monogram: "Art",

@@ -25,6 +25,14 @@ const ICONS: Record<string, React.ReactNode> = {
       </text>
     </>
   ),
+  german: (
+    <>
+      <rect x="3.5" y="5" width="17" height="14" rx="4" />
+      <text x="12" y="15.6" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="currentColor" stroke="none">
+        De
+      </text>
+    </>
+  ),
   art: (
     <>
       <path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.9 1.4-2l-.4-1a1.6 1.6 0 0 1 1.5-2.2H17a3.5 3.5 0 0 0 3.5-3.5c0-4.6-3.8-8.3-8.5-8.3z" />
@@ -45,6 +53,7 @@ const TABS = [
   { href: "/", label: "Главная", icon: "home" },
   { href: "/learn/spanish", label: "Spanish", icon: "spanish" },
   { href: "/learn/english", label: "English", icon: "english" },
+  { href: "/learn/german", label: "Deutsch", icon: "german" },
   { href: "/art", label: "Art", icon: "art" },
   { href: "/translate", label: "Перевод", icon: "translate" },
 ];

@@ -9,6 +9,7 @@ const CHECK_INTERVAL_MS = 5 * 60_000;
 const TRACK_LINE = {
   spanish: "испанский ждёт вас — 10 минут интенсива дня",
   english: "пара реплик на английском — и день засчитан",
+  german: "ein paar Sätze auf Deutsch — и день засчитан",
   art: "новое задание для рисования уже готово",
   translate: "загляните в переводчик и занятия",
 };
