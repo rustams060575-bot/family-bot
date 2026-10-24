@@ -91,8 +91,13 @@ export class AudioEngine {
   }
 }
 
-// Голос Мартины: бесплатный системный синтез речи устройства (Web Speech API), без
-// платных сервисов. Тёплый женский голос: русский — для русских реплик, голос изучаемого
+import { ApiError, apiFetch } from "./api";
+
+// Голос Мартины и Лео: премиальная озвучка OpenAI (tts-1-hd, /api/tts). Если сервер её не
+// отдаёт (нет ключа, лимит, сбой сети) — запасной вариант: системный синтез речи устройства
+// (Web Speech API). Любой сбой не показывается ошибкой: озвучка просто идёт запасным голосом.
+//
+// Запасной голос — тёплый женский: русский — для русских реплик, голос изучаемого
 // языка — для фраз на английском или испанском. Любой сбой не показывается ошибкой:
 // озвучка просто завершается.
 
@@ -135,6 +140,56 @@ function splitSentences(text: string) {
 
 let primed = false;
 
+// ── Премиальная озвучка (OpenAI TTS) ────────────────────────────────────────
+// Один общий <audio>: iOS разрешает воспроизведение только на элементе, «разбуженном» жестом.
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+let audioEl: HTMLAudioElement | null = null;
+let playToken = 0;
+let premiumOff = false;
+const blobCache = new Map<string, string>();
+
+function getAudioEl() {
+  audioEl ??= new Audio();
+  return audioEl;
+}
+
+async function premiumUrl(text: string, voice: string) {
+  const key = `${voice}|${text}`;
+  const cached = blobCache.get(key);
+  if (cached) return cached;
+  const response = await apiFetch("/api/tts", { method: "POST", body: JSON.stringify({ text, voice }) });
+  const url = URL.createObjectURL(await response.blob());
+  blobCache.set(key, url);
+  if (blobCache.size > 30) {
+    const oldest = blobCache.keys().next().value;
+    if (oldest) {
+      URL.revokeObjectURL(blobCache.get(oldest)!);
+      blobCache.delete(oldest);
+    }
+  }
+  return url;
+}
+
+// true — реплика озвучена (или озвучка отменена пользователем); false — нужен запасной голос.
+async function speakPremium(text: string, voice: string, onEnd?: () => void) {
+  if (premiumOff) return false;
+  const token = ++playToken;
+  try {
+    const url = await premiumUrl(text, voice);
+    if (token !== playToken) return true; // за время загрузки запустили другую реплику или нажали стоп
+    const audio = getAudioEl();
+    audio.onended = () => token === playToken && onEnd?.();
+    audio.onerror = () => token === playToken && onEnd?.();
+    audio.src = url;
+    await audio.play();
+    return true;
+  } catch (error) {
+    // 501 — на сервере нет ключа OpenAI: до перезагрузки не пытаемся снова.
+    if (error instanceof ApiError && error.status === 501) premiumOff = true;
+    return false;
+  }
+}
+
 // iOS разрешает синтез речи только после жеста пользователя. Вызывать синхронно в
 // обработчике нажатия: пустая фраза «разблокирует» голос для последующих ответов,
 // которые приходят асинхронно после запроса к ИИ.
@@ -145,12 +200,22 @@ export function primeSpeech() {
     const silent = new SpeechSynthesisUtterance(" ");
     silent.volume = 0;
     window.speechSynthesis.speak(silent);
+    // «Будим» общий <audio> тишиной — иначе iOS заблокирует ответ, пришедший после запроса к ИИ.
+    const audio = getAudioEl();
+    audio.src = SILENT_WAV;
+    audio.play().catch(() => {});
   } catch {
     // не критично: озвучка просто начнётся со следующего нажатия
   }
 }
 
 export function stopSpeech() {
+  playToken++;
+  try {
+    audioEl?.pause();
+  } catch {
+    // нечего останавливать
+  }
   try {
     window.speechSynthesis?.cancel();
   } catch {
@@ -158,7 +223,18 @@ export function stopSpeech() {
   }
 }
 
-export async function speakWithBrowser(text: string, lang: string, onEnd?: () => void) {
+// voice: "female" — Мартина (nova), "male" — Лео (echo).
+export async function speakWithBrowser(
+  text: string,
+  lang: string,
+  onEnd?: () => void,
+  options: { voice?: "female" | "male" } = {},
+) {
+  if (await speakPremium(text, options.voice ?? "female", onEnd)) return;
+  speakWithSystemVoice(text, lang, onEnd);
+}
+
+async function speakWithSystemVoice(text: string, lang: string, onEnd?: () => void) {
   let finished = false;
   const finish = () => {
     if (finished) return;

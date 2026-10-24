@@ -14,6 +14,7 @@ import { aiChat } from "@/lib/openai.mjs";
 import { studentProfileBlock } from "@/lib/studentMemory.mjs";
 import { guardReply } from "@/lib/teacherRules.mjs";
 import { kidsLevel } from "@/lib/cefr.mjs";
+import { recordTurn, summarizeInBackground } from "@/lib/sessionSummary.mjs";
 import { crmPrompt, kidsPrompt, textPrompt, voicePrompt } from "@/lib/prompts.mjs";
 import { learnerLine, learningOf, lessonPracticeLine } from "@/lib/learning.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
@@ -135,6 +136,9 @@ export async function POST(request: Request) {
       level: kid ? kidsLevel(learning) : persona.level,
       label: `app chat ${account.id}`,
     });
+    // Новый урок закрывает прошлую сессию (суммаризация в фоне), затем копим расшифровку этой.
+    if (persona.sessionStart) summarizeInBackground(account, track, "new-session");
+    recordTurn(account, track, messages.at(-1)!.content, guarded);
     return NextResponse.json({
       reply: guarded,
       translation: String(parsed.translation ?? ""),

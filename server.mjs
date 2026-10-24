@@ -5,6 +5,8 @@ import { getBotIdentity, startBot, webAppUrl } from "./bot/telegram-bot.mjs";
 import { GROQ_API_KEY_ENV_VARS, GROQ_MODEL, groqKeyCount, logDetailedError } from "./lib/groq.mjs";
 import { flushAccounts } from "./lib/store.mjs";
 import { visionChain } from "./lib/ai.mjs";
+import { llmChain } from "./lib/openai.mjs";
+import { startSessionSweeper } from "./lib/sessionSummary.mjs";
 import { telegramBotToken } from "./lib/telegram-auth.mjs";
 
 // Один процесс — один сервис на Railway: Next.js (Mini App + API) и Telegram-бот
@@ -36,6 +38,7 @@ const PORT = Number(process.env.PORT) || 3000;
 function configurationProblems() {
   const problems = [];
   if (!telegramBotToken()) problems.push("Telegram-токен не найден (TELEGRAM_BOT_TOKEN, BOT_TOKEN)");
+  if (!process.env.OPENAI_API_KEY) problems.push("OPENAI_API_KEY не задан — ИИ и озвучка работают на резервных Groq и голосе браузера");
   if (groqKeyCount() === 0) problems.push(`ни один ключ Groq не найден (${GROQ_API_KEY_ENV_VARS.join(", ")})`);
   if (!webAppUrl()) problems.push("нет адреса Mini App (WEBAPP_URL или публичный домен Railway) — кнопка запуска не отправляется");
   // Без Volume диск контейнера очищается при каждом деплое: профили, заявки и стрики теряются
@@ -65,6 +68,7 @@ http
       const info = [
         `бот: ${getBotIdentity() ?? (telegramBotToken() ? "запускается или токен не принят Telegram" : "нет токена")}`,
         `Mini App: ${webAppUrl() ?? "не задан"}`,
+        `LLM: ${llmChain()}`,
         `Vision: ${visionChain()}`,
       ];
       res.end([problems.length ? `ata-academy: ${problems.join("; ")}` : "ata-academy ishlayapti", ...info].join("\n"));
@@ -75,6 +79,7 @@ http
   .listen(PORT, () => console.log(`ATA Academy: http://localhost:${PORT} (${dev ? "dev" : "production"})`));
 
 const bot = startBot();
+startSessionSweeper();
 
 function shutdown(signal) {
   flushAccounts();

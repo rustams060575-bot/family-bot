@@ -12,6 +12,7 @@ import { logDetailedError } from "@/lib/groq.mjs";
 import { aiChat } from "@/lib/openai.mjs";
 import { studentProfileBlock } from "@/lib/studentMemory.mjs";
 import { guardReply } from "@/lib/teacherRules.mjs";
+import { recordTurn, summarizeInBackground } from "@/lib/sessionSummary.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
 import { leoChatPrompt } from "@/lib/chessSchool.mjs";
@@ -75,6 +76,8 @@ export async function POST(request: Request) {
     }
     recordActivity(account);
     const guarded = await guardReply(text(parsed.reply) || reply, { label: `chess chat ${account.id}` });
+    if (persona.sessionStart) summarizeInBackground(account, "chess", "new-session");
+    recordTurn(account, "chess", messages.at(-1)!.content, guarded);
     return NextResponse.json({
       reply: guarded,
       choices: (Array.isArray(parsed.choices) ? parsed.choices : []).map(text).filter(Boolean).slice(0, 3),

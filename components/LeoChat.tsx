@@ -54,7 +54,7 @@ export default function LeoChat() {
       ]);
       setAccount(data.account);
       haptic("light");
-      speakWithBrowser(data.reply, "ru-RU");
+      speakWithBrowser(data.reply, "ru-RU", undefined, { voice: "male" });
     } catch (err) {
       if (handleError(err) !== null) {
         setMessages((current) => [...current, { id: nextId++, role: "assistant", content: RETRY, local: true }]);

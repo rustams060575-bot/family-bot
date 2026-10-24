@@ -12,6 +12,7 @@ import { logDetailedError } from "@/lib/groq.mjs";
 import { aiChat } from "@/lib/openai.mjs";
 import { studentProfileBlock } from "@/lib/studentMemory.mjs";
 import { guardReply } from "@/lib/teacherRules.mjs";
+import { recordTurn, summarizeInBackground } from "@/lib/sessionSummary.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { artAnswerPrompt, artChatPrompt } from "@/lib/prompts.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
@@ -93,6 +94,10 @@ export async function POST(request: Request) {
       label: `art chat ${account.id}`,
       skipQuestion: !!answerTo,
     });
+    if (!answerTo) {
+      if (persona.sessionStart) summarizeInBackground(account, "art", "new-session");
+      recordTurn(account, "art", messages.at(-1)!.content, guarded);
+    }
     return NextResponse.json({
       reply: guarded,
       task,

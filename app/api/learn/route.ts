@@ -12,6 +12,7 @@ import { profileLine } from "@/lib/learnerProfile.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
 import { aiChat } from "@/lib/openai.mjs";
 import { studentProfileBlock } from "@/lib/studentMemory.mjs";
+import { recordTurn, summarizeInBackground } from "@/lib/sessionSummary.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import {
   LANGUAGE_TRACKS,
@@ -148,6 +149,8 @@ export async function POST(request: Request) {
       const result = completeLesson(account, track, body?.answers);
       if (!result) return badRequest("Нет активного урока.");
       recordActivity(account);
+      // Урок завершён — выжимка и обновление слабых мест в профиле (в фоне).
+      summarizeInBackground(account, track, "lesson");
       return NextResponse.json({
         result,
         lesson: publicLesson(learning.lesson, { revealAnswers: true }),

@@ -8,6 +8,7 @@ import { aiChat } from "../lib/openai.mjs";
 import { MEMORY_TRACKS, studentProfileBlock } from "../lib/studentMemory.mjs";
 import { guardReply, teacherRules } from "../lib/teacherRules.mjs";
 import { cefrBlock, isStrictLevel } from "../lib/cefr.mjs";
+import { recordTurn, summarizeInBackground } from "../lib/sessionSummary.mjs";
 import {
   DATA_DIR,
   accessStatus,
@@ -212,7 +213,11 @@ async function askAssistant(user, userText, chatId, account) {
     `chat ${chatId}`,
     { tier: "dialog" },
   );
-  if (track) replyText = await guardReply(replyText, { level: learning?.level ?? null, label: `chat ${chatId}` });
+  if (track) {
+    replyText = await guardReply(replyText, { level: learning?.level ?? null, label: `chat ${chatId}` });
+    if (user.history.length === 0) summarizeInBackground(account, track, "new-session");
+    recordTurn(account, track, userText, replyText);
+  }
 
   user.history.push({ role: "user", content: userText });
   user.history.push({ role: "assistant", content: replyText });
