@@ -3,6 +3,7 @@ import { authenticate, badRequest, requireAccess, unauthorized } from "@/lib/ser
 import { countArtAnalysis, displayName, isKid, recordActivity, setArtTask } from "@/lib/store.mjs";
 import { artPrompt } from "@/lib/prompts.mjs";
 import { profileLine, saveArtwork } from "@/lib/learnerProfile.mjs";
+import { studentProfileBlock } from "@/lib/studentMemory.mjs";
 import { artLessonLine, artMethodLine, artOf, completeArtLesson } from "@/lib/artSchool.mjs";
 import { analyzeImageJson, sniffImageType, visionChain, visionProvider } from "@/lib/ai.mjs";
 import { logDetailedError } from "@/lib/groq.mjs";
@@ -85,6 +86,7 @@ async function handle(request: Request) {
     name: isKid(account) ? displayName(account) : "",
     method: artMethodLine(account),
     profile: profileLine(account),
+    memory: studentProfileBlock(account, "art"),
     lesson: artLessonLine(account),
   };
 

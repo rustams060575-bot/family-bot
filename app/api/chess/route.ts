@@ -9,7 +9,8 @@ import {
 } from "@/lib/server/session";
 import { refund } from "@/lib/store.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { setArtAge } from "@/lib/artSchool.mjs";
 import {
@@ -42,13 +43,13 @@ async function generateLesson(account: any, topic: string) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const reply = await groqChat(
+      const reply = await aiChat(
         [
           { role: "system", content: chessLessonPrompt(account, topic, profileLine(account)) },
           { role: "user", content: "Составь урок." },
         ],
         `chess lesson ${account.id}`,
-        { maxTokens: 1200, json: true },
+        { tier: "dialog", maxTokens: 1200, json: true },
       );
       return normalizeChessLesson(parseJsonReply(reply), topic);
     } catch (error) {

@@ -9,7 +9,9 @@ import {
 } from "@/lib/server/session";
 import { recordActivity, refund } from "@/lib/store.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
+import { studentProfileBlock } from "@/lib/studentMemory.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import {
   LANGUAGE_TRACKS,
@@ -54,17 +56,20 @@ async function generateLesson(
   label: string,
   profile: string,
   gaps: string[],
+  memory: string,
+  learning: any,
 ) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const reply = await groqChat(
+      const reply = await aiChat(
         [
-          { role: "system", content: lessonPrompt(track, level, topics, profile, gaps) },
+          { role: "system", content: lessonPrompt(track, level, topics, profile, gaps, memory, learning) },
           { role: "user", content: "Составь урок на сегодня." },
         ],
         label,
         {
+          tier: "dialog",
           maxTokens: 2000,
           json: true,
         },
@@ -121,6 +126,8 @@ export async function POST(request: Request) {
           `lesson ${track} ${account.id}`,
           profileLine(account),
           learning.gaps ?? [],
+          studentProfileBlock(account, track),
+          learning,
         );
         saveLesson(account, track, lesson);
         return NextResponse.json({ learning: publicLearning(account, track) });

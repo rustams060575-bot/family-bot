@@ -8,7 +8,10 @@ import {
   unauthorized,
 } from "@/lib/server/session";
 import { displayName, isKid, publicAccount, recordActivity, refund, setArtTask } from "@/lib/store.mjs";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
+import { studentProfileBlock } from "@/lib/studentMemory.mjs";
+import { guardReply } from "@/lib/teacherRules.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { artAnswerPrompt, artChatPrompt } from "@/lib/prompts.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
@@ -17,7 +20,7 @@ import { artLessonLine, artMethodLine } from "@/lib/artSchool.mjs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_TURNS = 16;
+const MAX_TURNS = Math.min(15, Math.max(10, Number(process.env.SHORT_MEMORY_TURNS) || 14));
 const MAX_CHARS = 1500;
 
 type Turn = { role: "user" | "assistant"; content: string };
@@ -57,6 +60,9 @@ export async function POST(request: Request) {
     name: isKid(account) ? displayName(account) : "",
     method: artMethodLine(account),
     profile: profileLine(account),
+    memory: studentProfileBlock(account, "art"),
+    interests: account.profile?.interests ?? [],
+    sessionStart: messages.length <= 2,
     lesson: artLessonLine(account),
   };
   // Ответ на «Вопрос от Мартины» после разбора рисунка — короткая реакция без нового задания.
@@ -69,10 +75,10 @@ export async function POST(request: Request) {
       })
     : artChatPrompt(persona, account.artTask ?? null);
   try {
-    const reply = await groqChat(
+    const reply = await aiChat(
       [{ role: "system", content: system }, ...messages],
       `art chat ${account.id}`,
-      { maxTokens: 700, json: true },
+      { tier: "dialog", maxTokens: 700, json: true },
     );
     let parsed: any;
     try {
@@ -82,8 +88,13 @@ export async function POST(request: Request) {
     }
     const task = !answerTo && parsed.task && text(parsed.task.title) ? setArtTask(account, parsed.task) : null;
     recordActivity(account);
+    // «Ответ на вопрос Мартины» — короткая реакция без нового вопроса; в остальных репликах ровно один интерактив.
+    const guarded = await guardReply(text(parsed.reply) || reply, {
+      label: `art chat ${account.id}`,
+      skipQuestion: !!answerTo,
+    });
     return NextResponse.json({
-      reply: text(parsed.reply) || reply,
+      reply: guarded,
       task,
       choices: (Array.isArray(parsed.choices) ? parsed.choices : []).map(text).filter(Boolean).slice(0, 3),
       account: publicAccount(account),

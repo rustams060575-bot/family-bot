@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticate, badRequest, requireAccess, serverError, unauthorized } from "@/lib/server/session";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
 import { answerMicro, dailyLanguage, microPrompt, normalizeMicro, publicDaily, saveMicro } from "@/lib/daily.mjs";
@@ -31,13 +32,13 @@ export async function POST(request: Request) {
       const track = dailyLanguage(account);
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const reply = await groqChat(
+          const reply = await aiChat(
             [
               { role: "system", content: microPrompt(account, profileLine(account)) },
               { role: "user", content: "Микро-практика на сегодня." },
             ],
             `daily micro ${account.id}`,
-            { maxTokens: 600, json: true },
+            { tier: "fast", maxTokens: 600, json: true },
           );
           saveMicro(account, normalizeMicro(parseJsonReply(reply), track));
           return NextResponse.json({ daily: publicDaily(account) });

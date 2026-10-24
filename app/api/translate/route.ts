@@ -8,7 +8,8 @@ import {
   unauthorized,
 } from "@/lib/server/session";
 import { recordActivity, refund } from "@/lib/store.mjs";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
 import { TRANSLATE_LANG_CODES, translatePrompt } from "@/lib/prompts.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 
@@ -32,13 +33,13 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
 
   try {
-    const reply = await groqChat(
+    const reply = await aiChat(
       [
         { role: "system", content: translatePrompt(from, to, register) },
         { role: "user", content: text },
       ],
       `app translate ${account.id}`,
-      { maxTokens: 1500, json: true },
+      { tier: "fast", maxTokens: 1500, json: true },
     );
     const parsed = parseJsonReply(reply);
     recordActivity(account);

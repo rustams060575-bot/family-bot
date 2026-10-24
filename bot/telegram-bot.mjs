@@ -3,7 +3,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Telegraf, Markup } from "telegraf";
 import { message } from "telegraf/filters";
-import { groqChat, logDetailedError } from "../lib/groq.mjs";
+import { logDetailedError } from "../lib/groq.mjs";
+import { aiChat } from "../lib/openai.mjs";
+import { MEMORY_TRACKS, studentProfileBlock } from "../lib/studentMemory.mjs";
+import { guardReply, teacherRules } from "../lib/teacherRules.mjs";
+import { cefrBlock, isStrictLevel } from "../lib/cefr.mjs";
 import {
   DATA_DIR,
   accessStatus,
@@ -41,7 +45,8 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const STATS_FILE = path.join(DATA_DIR, "stats.json");
 const SYSTEM_PROMPT_FILE = path.join(__dirname, "system_prompt.md");
 // Пара (запрос + ответ) — один "ход"; храним последние 15 ходов на чат.
-const MAX_HISTORY_MESSAGES = 30;
+// Short-term memory: в модель уходят последние 10–15 реплик (хранится столько же).
+const MAX_HISTORY_MESSAGES = Math.min(15, Math.max(10, Number(process.env.SHORT_MEMORY_TURNS) || 14));
 const FALLBACK_ERROR_MESSAGE =
   "Извините, сейчас не получилось получить ответ — произошёл сбой при обращении к ИИ. Пожалуйста, попробуйте отправить запрос ещё раз через минуту.";
 // Голосовые в чате бота не обрабатываются — голосовой репетитор живёт в Mini App.
@@ -186,15 +191,28 @@ function enqueue(chatId, task) {
 async function askAssistant(user, userText, chatId, account) {
   // Имя из Telegram и, для VIP, подбадривающий тон — как в Mini App.
   const persona = personaLine({ name: displayName(account), vip: isVip(account) });
-  const system = persona
-    ? `${systemInstruction}
-
-${persona}`
-    : systemInstruction;
-  const replyText = await groqChat(
+  // Long-term memory и правила учителя — для учебных направлений ученика (язык, рисование).
+  const track = MEMORY_TRACKS.includes(account?.track) ? account.track : null;
+  const learning = track ? account.learning?.[track] : null;
+  const parts = [systemInstruction, persona];
+  if (track) {
+    if (isStrictLevel(learning?.level)) parts.push(cefrBlock(learning.level, learning));
+    parts.push(
+      studentProfileBlock(account, track),
+      teacherRules({
+        name: displayName(account),
+        interests: account.profile?.interests ?? [],
+        sessionStart: user.history.length === 0,
+      }),
+    );
+  }
+  const system = parts.filter(Boolean).join("\n\n");
+  let replyText = await aiChat(
     [{ role: "system", content: system }, ...user.history, { role: "user", content: userText }],
     `chat ${chatId}`,
+    { tier: "dialog" },
   );
+  if (track) replyText = await guardReply(replyText, { level: learning?.level ?? null, label: `chat ${chatId}` });
 
   user.history.push({ role: "user", content: userText });
   user.history.push({ role: "assistant", content: replyText });

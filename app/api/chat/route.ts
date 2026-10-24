@@ -9,7 +9,11 @@ import {
 } from "@/lib/server/session";
 import { displayName, isKid, isVip, recordActivity, refund } from "@/lib/store.mjs";
 import { findStudent, recentLessonsText } from "@/lib/crm.mjs";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
+import { studentProfileBlock } from "@/lib/studentMemory.mjs";
+import { guardReply } from "@/lib/teacherRules.mjs";
+import { kidsLevel } from "@/lib/cefr.mjs";
 import { crmPrompt, kidsPrompt, textPrompt, voicePrompt } from "@/lib/prompts.mjs";
 import { learnerLine, learningOf, lessonPracticeLine } from "@/lib/learning.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
@@ -18,7 +22,8 @@ import { parseJsonReply } from "@/lib/ai.mjs";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_TURNS = 20;
+// Short-term memory: сколько последних реплик уходит в модель (10–15).
+const MAX_TURNS = Math.min(15, Math.max(10, Number(process.env.SHORT_MEMORY_TURNS) || 14));
 const MAX_CHARS = 4000;
 
 type Turn = { role: "user" | "assistant"; content: string };
@@ -67,8 +72,19 @@ export async function POST(request: Request) {
   if (messages.at(-1)?.role !== "user") return badRequest("Нет реплики пользователя.");
 
   const kid = isKid(account);
-  const persona = { name: displayName(account), vip: isVip(account), kid };
   const language = track === "spanish" || track === "english";
+  // Long-term memory: имя, интересы, уровень и итог прошлого урока подставляются в каждый запрос.
+  const learning = language ? learningOf(account, track) : null;
+  const persona = {
+    name: displayName(account),
+    vip: isVip(account),
+    kid,
+    level: learning?.level ?? null,
+    learning,
+    interests: account.profile?.interests ?? [],
+    sessionStart: messages.length <= 2,
+    memory: language ? studentProfileBlock(account, track) : "",
+  };
   let system: string | null = null;
   if (track === "crm") {
     // План занятия для ученика из CRM владельца; чужой studentId просто не найдётся.
@@ -81,7 +97,7 @@ export async function POST(request: Request) {
     // Память Мартины: карточка ученика, уровень, пройденные темы и урок дня.
     const lesson = topic === "lesson" ? learningOf(account, track).lesson : null;
     if (topic === "lesson" && !lesson) return badRequest("Урок дня ещё не создан.");
-    const context = [profileLine(account), learnerLine(account, track), lessonPracticeLine(lesson)]
+    const context = [persona.memory, profileLine(account), learnerLine(account, track), lessonPracticeLine(lesson)]
       .filter(Boolean)
       .join("\n\n");
     system = (mode === "voice" ? voicePrompt : textPrompt)(track, topic, account.role, persona, context);
@@ -98,7 +114,8 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
 
   try {
-    const reply = await groqChat([{ role: "system", content: system }, ...messages], `app chat ${account.id}`, {
+    const reply = await aiChat([{ role: "system", content: system }, ...messages], `app chat ${account.id}`, {
+      tier: "dialog",
       maxTokens: mode === "voice" || kid ? 700 : 1200,
       json: language,
     });
@@ -113,8 +130,13 @@ export async function POST(request: Request) {
     } catch {
       parsed = { reply };
     }
+    // Серверная проверка: ровно один интерактив и (A1–B1) никаких конструкций выше уровня.
+    const guarded = await guardReply(String(parsed.reply ?? "").trim() || reply, {
+      level: kid ? kidsLevel(learning) : persona.level,
+      label: `app chat ${account.id}`,
+    });
     return NextResponse.json({
-      reply: String(parsed.reply ?? "").trim() || reply,
+      reply: guarded,
       translation: String(parsed.translation ?? ""),
       corrections: kid ? [] : academicCorrections(parsed.corrections),
       pronunciation: kid ? "" : String(parsed.pronunciation ?? ""),

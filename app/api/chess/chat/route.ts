@@ -8,7 +8,10 @@ import {
   unauthorized,
 } from "@/lib/server/session";
 import { displayName, isKid, publicAccount, recordActivity, refund } from "@/lib/store.mjs";
-import { groqChat, logDetailedError } from "@/lib/groq.mjs";
+import { logDetailedError } from "@/lib/groq.mjs";
+import { aiChat } from "@/lib/openai.mjs";
+import { studentProfileBlock } from "@/lib/studentMemory.mjs";
+import { guardReply } from "@/lib/teacherRules.mjs";
 import { parseJsonReply } from "@/lib/ai.mjs";
 import { profileLine } from "@/lib/learnerProfile.mjs";
 import { leoChatPrompt } from "@/lib/chessSchool.mjs";
@@ -51,12 +54,18 @@ export async function POST(request: Request) {
   const rejected = consumeOrReject(account, "ai");
   if (rejected) return rejected;
 
-  const persona = { name: isKid(account) ? displayName(account) : "", profile: profileLine(account) };
+  const persona = {
+    name: isKid(account) ? displayName(account) : "",
+    profile: profileLine(account),
+    memory: studentProfileBlock(account, "chess"),
+    interests: account.profile?.interests ?? [],
+    sessionStart: messages.length <= 2,
+  };
   try {
-    const reply = await groqChat(
+    const reply = await aiChat(
       [{ role: "system", content: leoChatPrompt(account, persona) }, ...messages],
       `chess chat ${account.id}`,
-      { maxTokens: 600, json: true },
+      { tier: "dialog", maxTokens: 600, json: true },
     );
     let parsed: any;
     try {
@@ -65,8 +74,9 @@ export async function POST(request: Request) {
       parsed = { reply };
     }
     recordActivity(account);
+    const guarded = await guardReply(text(parsed.reply) || reply, { label: `chess chat ${account.id}` });
     return NextResponse.json({
-      reply: text(parsed.reply) || reply,
+      reply: guarded,
       choices: (Array.isArray(parsed.choices) ? parsed.choices : []).map(text).filter(Boolean).slice(0, 3),
       account: publicAccount(account),
     });
